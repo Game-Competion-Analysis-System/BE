@@ -1,24 +1,17 @@
-# ---------- Build stage ----------
+# Build stage
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-WORKDIR /app
-
-COPY *.sln .
-COPY BLL/*.csproj BLL/
-COPY DAL/*.csproj DAL/
-COPY *.csproj ./
-
-RUN dotnet restore
+WORKDIR /src
 
 COPY . .
-RUN dotnet publish -c Release -o out
+RUN dotnet restore
+RUN dotnet publish -c Release -o /app/publish
 
-# ---------- Runtime stage ----------
+# Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
+COPY --from=build /app/publish .
 
-ENV ASPNETCORE_URLS=http://+:80
-ENV ASPNETCORE_ENVIRONMENT=Production
-
-COPY --from=build /app/out .
+ENV ASPNETCORE_URLS=http://+:10000
+EXPOSE 10000
 
 ENTRYPOINT ["dotnet", "GameCompetionAnalysisSystem.dll"]
