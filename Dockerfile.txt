@@ -1,17 +1,26 @@
+﻿# ======================
 # Build stage
+# ======================
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
 COPY . .
+
 RUN dotnet restore GameCompetionAnalysisSystem.sln
-RUN dotnet publish GameCompetionAnalysisSystem.sln -c Release -o /app/publish
+
+# Publish CHỈ Web API
+RUN dotnet publish GameCompetionAnalysisSystem/GameCompetionAnalysisSystem.csproj \
+    -c Release \
+    -o /app/publish \
+    /p:UseAppHost=false
 
 
-
-
+# ======================
 # Runtime stage
+# ======================
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
+
 COPY --from=build /app/publish .
 
 ENV ASPNETCORE_URLS=http://+:${PORT:-10000}
