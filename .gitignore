@@ -1,0 +1,25 @@
+## .NET
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.cache
+
+## User secrets
+appsettings.Development.json
+
+## Logs
+*.log
+
+## OS
+.DS_Store
+Thumbs.db
+
+## IDE
+.idea/
+*.swp
+
+## Build outputs
+build_log.txt
+errors.txt

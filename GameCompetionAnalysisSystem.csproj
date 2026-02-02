@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <!-- Exclude BIL and DAL source files since they're compiled as separate projects -->
+  <ItemGroup>
+    <Compile Remove="BIL\**" />
+    <Compile Remove="DAL\**" />
+    <Content Remove="BIL\**" />
+    <Content Remove="DAL\**" />
+    <EmbeddedResource Remove="BIL\**" />
+    <EmbeddedResource Remove="DAL\**" />
+    <None Remove="BIL\**" />
+    <None Remove="DAL\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="BIL\BIL.csproj" />
+    <ProjectReference Include="DAL\DAL.csproj" />
+  </ItemGroup>
+
+</Project>
