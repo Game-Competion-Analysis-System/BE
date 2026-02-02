@@ -6,6 +6,9 @@ COPY . .
 RUN dotnet restore GameCompetionAnalysisSystem.csproj
 RUN dotnet publish GameCompetionAnalysisSystem.csproj -c Release -o /app/publish
 
+
+
+
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
