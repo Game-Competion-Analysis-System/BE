@@ -40,11 +40,15 @@ builder.Services.AddScoped<IGameService, GameService>();
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment()||true)
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+// Always enable Swagger
+app.UseSwagger();
+app.UseSwaggerUI();
+
+// Redirect root to Swagger
+app.MapGet("/", () => Results.Redirect("/swagger"));
+
+// Health check endpoint
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 
 app.UseHttpsRedirection();
 app.UseAuthorization();
