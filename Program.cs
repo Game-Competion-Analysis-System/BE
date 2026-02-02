@@ -40,13 +40,11 @@ builder.Services.AddScoped<IGameService, GameService>();
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment()||true)
+if (app.Environment.IsDevelopment() || true)
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-var port = Environment.GetEnvironmentVariable("PORT") ?? "80";
-app.Urls.Add($"http://0.0.0.0:{port}");
 
 app.UseHttpsRedirection();
 app.UseAuthorization();
