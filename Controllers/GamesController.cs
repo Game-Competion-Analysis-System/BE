@@ -1,11 +1,13 @@
-﻿using BIL.Service;
+using BIL.Service;
 using DAL.Entities;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GameCompetionAnalysisSystem.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class GamesController : ControllerBase
     {
         private readonly IGameService _service;
@@ -16,11 +18,13 @@ namespace GameCompetionAnalysisSystem.Controllers
         }
 
         [HttpGet]
+        [AllowAnonymous]
         public IActionResult GetAll()
             => Ok(_service.GetAllGames());
 
         //Get by ID
         [HttpGet("{id}")]
+        [AllowAnonymous]
         public IActionResult GetById(int id)
         {
             var game = _service.GetById(id);
@@ -29,6 +33,7 @@ namespace GameCompetionAnalysisSystem.Controllers
         }
         //Create Game
         [HttpPost]
+        [Authorize(Roles = "admin")]
         public IActionResult Create(Game game)
         {
             _service.Add(game);
@@ -37,11 +42,13 @@ namespace GameCompetionAnalysisSystem.Controllers
 
 
         [HttpGet("mmorpg")]
+        [AllowAnonymous]
         public IActionResult GetMMORPG()
             => Ok(_service.GetMMORPGGames());
 
         //Update
         [HttpPut("{id}")]
+        [Authorize(Roles = "admin")]
         public IActionResult Update(int id, [FromBody] Game game)
         {
             game.Gameid = id;
@@ -50,6 +57,7 @@ namespace GameCompetionAnalysisSystem.Controllers
         }
         //Delete
         [HttpDelete("{id}")]
+        [Authorize(Roles = "admin")]
         public IActionResult Delete(int id)
         {
             var game = _service.GetById(id);

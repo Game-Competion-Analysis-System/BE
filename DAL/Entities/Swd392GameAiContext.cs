@@ -5,13 +5,13 @@ using System.Collections.Generic;
 
 namespace DAL.Entities;
 
-public partial class PostgresContext : DbContext
+public partial class Swd392GameAiContext : DbContext
 {
-    public PostgresContext()
+    public Swd392GameAiContext()
     {
     }
 
-    public PostgresContext(DbContextOptions<PostgresContext> options)
+    public Swd392GameAiContext(DbContextOptions<Swd392GameAiContext> options)
         : base(options)
     {
     }
@@ -26,6 +26,8 @@ public partial class PostgresContext : DbContext
 
     public virtual DbSet<Game> Games { get; set; }
 
+    public virtual DbSet<Guild> Guilds { get; set; }
+
     public virtual DbSet<Imageupload> Imageuploads { get; set; }
 
     public virtual DbSet<Leaderboard> Leaderboards { get; set; }
@@ -33,7 +35,11 @@ public partial class PostgresContext : DbContext
     public virtual DbSet<Leaderboardentry> Leaderboardentries { get; set; }
 
     public virtual DbSet<Player> Players { get; set; }
-    private string GetConnectionString()
+
+    public virtual DbSet<Server> Servers { get; set; }
+
+    public virtual DbSet<User> Users { get; set; }
+    private static string GetConnectionString()
     {
         IConfiguration config = new ConfigurationBuilder()
              .SetBasePath(AppContext.BaseDirectory)
@@ -41,7 +47,7 @@ public partial class PostgresContext : DbContext
                     .Build();
         var strConn = config["ConnectionStrings:DefaultConnection"];
 
-        return strConn;
+        return strConn ?? "";
     }
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -50,7 +56,6 @@ public partial class PostgresContext : DbContext
             optionsBuilder.UseNpgsql(GetConnectionString());
         }
     }
-
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Aianalysis>(entity =>
@@ -59,23 +64,19 @@ public partial class PostgresContext : DbContext
 
             entity.ToTable("aianalysis");
 
-            entity.HasIndex(e => e.Uploadid, "idx_analysis_upload");
-
             entity.Property(e => e.Analysisid).HasColumnName("analysisid");
             entity.Property(e => e.Aimodelversion)
                 .HasMaxLength(100)
                 .HasColumnName("aimodelversion");
             entity.Property(e => e.Confidencescore).HasColumnName("confidencescore");
             entity.Property(e => e.Processedtime)
-                .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("processedtime");
             entity.Property(e => e.Uploadid).HasColumnName("uploadid");
 
             entity.HasOne(d => d.Upload).WithMany(p => p.Aianalyses)
                 .HasForeignKey(d => d.Uploadid)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("aianalysis_uploadid_fkey");
+                .HasConstraintName("fk_analysis_upload");
         });
 
         modelBuilder.Entity<Aiextractedfield>(entity =>
@@ -84,20 +85,19 @@ public partial class PostgresContext : DbContext
 
             entity.ToTable("aiextractedfield");
 
-            entity.HasIndex(e => e.Analysisid, "idx_field_analysis");
-
             entity.Property(e => e.Fieldid).HasColumnName("fieldid");
             entity.Property(e => e.Analysisid).HasColumnName("analysisid");
             entity.Property(e => e.Confidence).HasColumnName("confidence");
             entity.Property(e => e.Fieldtype)
                 .HasMaxLength(100)
                 .HasColumnName("fieldtype");
-            entity.Property(e => e.Rawtext).HasColumnName("rawtext");
+            entity.Property(e => e.Rawtext)
+                .HasMaxLength(500)
+                .HasColumnName("rawtext");
 
             entity.HasOne(d => d.Analysis).WithMany(p => p.Aiextractedfields)
                 .HasForeignKey(d => d.Analysisid)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("aiextractedfield_analysisid_fkey");
+                .HasConstraintName("fk_field_analysis");
         });
 
         modelBuilder.Entity<Company>(entity =>
@@ -124,8 +124,6 @@ public partial class PostgresContext : DbContext
 
             entity.ToTable("event");
 
-            entity.HasIndex(e => e.Gameid, "idx_event_game");
-
             entity.Property(e => e.Eventid).HasColumnName("eventid");
             entity.Property(e => e.Enddate)
                 .HasColumnType("timestamp without time zone")
@@ -143,8 +141,7 @@ public partial class PostgresContext : DbContext
 
             entity.HasOne(d => d.Game).WithMany(p => p.Events)
                 .HasForeignKey(d => d.Gameid)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("event_gameid_fkey");
+                .HasConstraintName("fk_event_game");
         });
 
         modelBuilder.Entity<Game>(entity =>
@@ -152,8 +149,6 @@ public partial class PostgresContext : DbContext
             entity.HasKey(e => e.Gameid).HasName("game_pkey");
 
             entity.ToTable("game");
-
-            entity.HasIndex(e => e.Companyid, "idx_game_company");
 
             entity.Property(e => e.Gameid).HasColumnName("gameid");
             entity.Property(e => e.Companyid).HasColumnName("companyid");
@@ -166,8 +161,25 @@ public partial class PostgresContext : DbContext
 
             entity.HasOne(d => d.Company).WithMany(p => p.Games)
                 .HasForeignKey(d => d.Companyid)
-                .OnDelete(DeleteBehavior.SetNull)
-                .HasConstraintName("game_companyid_fkey");
+                .HasConstraintName("fk_game_company");
+        });
+
+        modelBuilder.Entity<Guild>(entity =>
+        {
+            entity.HasKey(e => e.Guildid).HasName("guild_pkey");
+
+            entity.ToTable("guild");
+
+            entity.Property(e => e.Guildid).HasColumnName("guildid");
+            entity.Property(e => e.Guildname)
+                .HasMaxLength(255)
+                .HasColumnName("guildname");
+            entity.Property(e => e.Leaderplayerid).HasColumnName("leaderplayerid");
+            entity.Property(e => e.Serverid).HasColumnName("serverid");
+
+            entity.HasOne(d => d.Server).WithMany(p => p.Guilds)
+                .HasForeignKey(d => d.Serverid)
+                .HasConstraintName("fk_guild_server");
         });
 
         modelBuilder.Entity<Imageupload>(entity =>
@@ -176,31 +188,26 @@ public partial class PostgresContext : DbContext
 
             entity.ToTable("imageupload");
 
-            entity.HasIndex(e => e.Eventid, "idx_upload_event");
-
-            entity.HasIndex(e => e.Playerid, "idx_upload_player");
-
             entity.Property(e => e.Uploadid).HasColumnName("uploadid");
             entity.Property(e => e.Eventid).HasColumnName("eventid");
-            entity.Property(e => e.Imageurl).HasColumnName("imageurl");
-            entity.Property(e => e.Playerid).HasColumnName("playerid");
+            entity.Property(e => e.Imageurl)
+                .HasMaxLength(500)
+                .HasColumnName("imageurl");
             entity.Property(e => e.Status)
                 .HasMaxLength(50)
                 .HasColumnName("status");
             entity.Property(e => e.Uploadtime)
-                .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("uploadtime");
+            entity.Property(e => e.Userid).HasColumnName("userid");
 
             entity.HasOne(d => d.Event).WithMany(p => p.Imageuploads)
                 .HasForeignKey(d => d.Eventid)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("imageupload_eventid_fkey");
+                .HasConstraintName("fk_upload_event");
 
-            entity.HasOne(d => d.Player).WithMany(p => p.Imageuploads)
-                .HasForeignKey(d => d.Playerid)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("imageupload_playerid_fkey");
+            entity.HasOne(d => d.User).WithMany(p => p.Imageuploads)
+                .HasForeignKey(d => d.Userid)
+                .HasConstraintName("fk_upload_user");
         });
 
         modelBuilder.Entity<Leaderboard>(entity =>
@@ -208,8 +215,6 @@ public partial class PostgresContext : DbContext
             entity.HasKey(e => e.Leaderboardid).HasName("leaderboard_pkey");
 
             entity.ToTable("leaderboard");
-
-            entity.HasIndex(e => e.Eventid, "idx_leaderboard_event");
 
             entity.Property(e => e.Leaderboardid).HasColumnName("leaderboardid");
             entity.Property(e => e.Createdfromanalysisid).HasColumnName("createdfromanalysisid");
@@ -223,12 +228,11 @@ public partial class PostgresContext : DbContext
 
             entity.HasOne(d => d.Createdfromanalysis).WithMany(p => p.Leaderboards)
                 .HasForeignKey(d => d.Createdfromanalysisid)
-                .HasConstraintName("leaderboard_createdfromanalysisid_fkey");
+                .HasConstraintName("fk_leaderboard_analysis");
 
             entity.HasOne(d => d.Event).WithMany(p => p.Leaderboards)
                 .HasForeignKey(d => d.Eventid)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("leaderboard_eventid_fkey");
+                .HasConstraintName("fk_leaderboard_event");
         });
 
         modelBuilder.Entity<Leaderboardentry>(entity =>
@@ -236,10 +240,6 @@ public partial class PostgresContext : DbContext
             entity.HasKey(e => e.Entryid).HasName("leaderboardentry_pkey");
 
             entity.ToTable("leaderboardentry");
-
-            entity.HasIndex(e => e.Leaderboardid, "idx_entry_leaderboard");
-
-            entity.HasIndex(e => e.Playerid, "idx_entry_player");
 
             entity.Property(e => e.Entryid).HasColumnName("entryid");
             entity.Property(e => e.Leaderboardid).HasColumnName("leaderboardid");
@@ -249,13 +249,11 @@ public partial class PostgresContext : DbContext
 
             entity.HasOne(d => d.Leaderboard).WithMany(p => p.Leaderboardentries)
                 .HasForeignKey(d => d.Leaderboardid)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("leaderboardentry_leaderboardid_fkey");
+                .HasConstraintName("fk_entry_leaderboard");
 
             entity.HasOne(d => d.Player).WithMany(p => p.Leaderboardentries)
                 .HasForeignKey(d => d.Playerid)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("leaderboardentry_playerid_fkey");
+                .HasConstraintName("fk_entry_player");
         });
 
         modelBuilder.Entity<Player>(entity =>
@@ -264,37 +262,73 @@ public partial class PostgresContext : DbContext
 
             entity.ToTable("player");
 
-            entity.HasIndex(e => e.Gameid, "idx_player_game");
-
             entity.Property(e => e.Playerid).HasColumnName("playerid");
-            entity.Property(e => e.Createdat)
-                .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasColumnType("timestamp without time zone")
-                .HasColumnName("createdat");
-            entity.Property(e => e.Email)
-                .HasMaxLength(255)
-                .HasColumnName("email");
             entity.Property(e => e.Gameid).HasColumnName("gameid");
-            entity.Property(e => e.Passwordhash).HasColumnName("passwordhash");
+            entity.Property(e => e.Guildid).HasColumnName("guildid");
             entity.Property(e => e.Playername)
-                .HasMaxLength(100)
+                .HasMaxLength(255)
                 .HasColumnName("playername");
-            entity.Property(e => e.Role)
-                .HasMaxLength(50)
-                .HasDefaultValueSql("'Player'::character varying")
-                .HasColumnName("role");
-            entity.Property(e => e.Server)
-                .HasMaxLength(100)
-                .HasColumnName("server");
-            entity.Property(e => e.Status)
-                .HasMaxLength(50)
-                .HasDefaultValueSql("'Active'::character varying")
-                .HasColumnName("status");
+            entity.Property(e => e.Serverid).HasColumnName("serverid");
 
             entity.HasOne(d => d.Game).WithMany(p => p.Players)
                 .HasForeignKey(d => d.Gameid)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("player_gameid_fkey");
+                .HasConstraintName("fk_player_game");
+
+            entity.HasOne(d => d.Guild).WithMany(p => p.Players)
+                .HasForeignKey(d => d.Guildid)
+                .HasConstraintName("fk_player_guild");
+
+            entity.HasOne(d => d.Server).WithMany(p => p.Players)
+                .HasForeignKey(d => d.Serverid)
+                .HasConstraintName("fk_player_server");
+        });
+
+        modelBuilder.Entity<Server>(entity =>
+        {
+            entity.HasKey(e => e.Serverid).HasName("server_pkey");
+
+            entity.ToTable("server");
+
+            entity.Property(e => e.Serverid).HasColumnName("serverid");
+            entity.Property(e => e.Gameid).HasColumnName("gameid");
+            entity.Property(e => e.Region)
+                .HasMaxLength(100)
+                .HasColumnName("region");
+            entity.Property(e => e.Servername)
+                .HasMaxLength(255)
+                .HasColumnName("servername");
+            entity.Property(e => e.Status)
+                .HasMaxLength(20)
+                .HasColumnName("status");
+
+            entity.HasOne(d => d.Game).WithMany(p => p.Servers)
+                .HasForeignKey(d => d.Gameid)
+                .HasConstraintName("fk_server_game");
+        });
+
+        modelBuilder.Entity<User>(entity =>
+        {
+            entity.HasKey(e => e.Userid).HasName("User_pkey");
+
+            entity.ToTable("User");
+
+            entity.HasIndex(e => e.Email, "User_email_key").IsUnique();
+
+            entity.HasIndex(e => e.Username, "User_username_key").IsUnique();
+
+            entity.Property(e => e.Userid).HasColumnName("userid");
+            entity.Property(e => e.Email)
+                .HasMaxLength(255)
+                .HasColumnName("email");
+            entity.Property(e => e.Passwordhash)
+                .HasMaxLength(255)
+                .HasColumnName("passwordhash");
+            entity.Property(e => e.Role)
+                .HasMaxLength(20)
+                .HasColumnName("role");
+            entity.Property(e => e.Username)
+                .HasMaxLength(100)
+                .HasColumnName("username");
         });
 
         OnModelCreatingPartial(modelBuilder);

@@ -1,4 +1,4 @@
-﻿using DAL.Entities;
+using DAL.Entities;
 using Microsoft.EntityFrameworkCore;
 using System.Text.RegularExpressions;
 
@@ -6,9 +6,9 @@ namespace DAL.Repository
 {
     public class LeaderboardRepository : ILeaderboardRepository
     {
-        private readonly PostgresContext _context;
+        private readonly Swd392GameAiContext _context;
 
-        public LeaderboardRepository(PostgresContext context)
+        public LeaderboardRepository(Swd392GameAiContext context)
         {
             _context = context;
         }
@@ -43,6 +43,35 @@ namespace DAL.Repository
                 .OrderBy(x => x.Rank)
                 .Take(n)
                 .ToListAsync();
+        }
+
+        public async Task<List<Leaderboard>> GetAllAsync()
+        {
+            return await _context.Leaderboards.ToListAsync();
+        }
+
+        public async Task<Leaderboard?> GetByIdAsync(int id)
+        {
+            return await _context.Leaderboards.FindAsync(id);
+        }
+
+        public async Task<List<Leaderboardentry>> GetEntriesByLeaderboardIdAsync(int leaderboardId)
+        {
+            return await _context.Leaderboardentries
+                .Include(x => x.Player)
+                .Where(x => x.Leaderboardid == leaderboardId)
+                .OrderBy(x => x.Rank)
+                .ToListAsync();
+        }
+
+        public async Task DeleteAsync(int id)
+        {
+            var lb = await _context.Leaderboards.FindAsync(id);
+            if (lb != null)
+            {
+                _context.Leaderboards.Remove(lb);
+                await _context.SaveChangesAsync();
+            }
         }
     }
 }

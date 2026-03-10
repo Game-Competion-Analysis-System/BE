@@ -7,7 +7,7 @@ public partial class Company
 {
     public int Companyid { get; set; }
 
-    public string Companyname { get; set; } = null!;
+    public string? Companyname { get; set; }
 
     public string? Country { get; set; }
 

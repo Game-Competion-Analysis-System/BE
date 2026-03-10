@@ -7,7 +7,7 @@ public partial class Imageupload
 {
     public int Uploadid { get; set; }
 
-    public int? Playerid { get; set; }
+    public int? Userid { get; set; }
 
     public int? Eventid { get; set; }
 
@@ -21,5 +21,5 @@ public partial class Imageupload
 
     public virtual Event? Event { get; set; }
 
-    public virtual Player? Player { get; set; }
+    public virtual User? User { get; set; }
 }

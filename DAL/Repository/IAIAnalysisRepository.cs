@@ -1,4 +1,4 @@
-﻿using DAL.Entities;
+using DAL.Entities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,6 +11,8 @@ namespace DAL.Repository
     public interface IAIAnalysisRepository
     {
         Task<Aianalysis> ProcessScreenshotAsync(IFormFile file);
+        Task<List<Aianalysis>> GetAllAsync();
+        Task<Aianalysis?> GetByIdAsync(int id);
     }
 
 

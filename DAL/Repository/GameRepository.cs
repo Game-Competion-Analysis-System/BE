@@ -10,9 +10,9 @@ namespace DAL.Repository
 {
     public class GameRepository : IGameRepository
     {
-        private readonly PostgresContext _context;
+        private readonly Swd392GameAiContext _context;
 
-        public GameRepository(PostgresContext context)
+        public GameRepository(Swd392GameAiContext context)
         {
             _context = context;
         }

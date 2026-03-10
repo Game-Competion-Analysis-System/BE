@@ -1,4 +1,4 @@
-﻿using DAL.Entities;
+using DAL.Entities;
 using DAL.Repository;
 using Microsoft.AspNetCore.Http;
 using System;
@@ -22,6 +22,16 @@ namespace BIL.Service
         public Task<Aianalysis> AnalyzeScreenshotAsync(IFormFile file)
         {
             return _repo.ProcessScreenshotAsync(file);
+        }
+
+        public async Task<List<Aianalysis>> GetHistoryAsync()
+        {
+            return await _repo.GetAllAsync();
+        }
+
+        public async Task<Aianalysis?> GetByIdAsync(int id)
+        {
+            return await _repo.GetByIdAsync(id);
         }
     }
 

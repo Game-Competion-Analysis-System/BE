@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
 
@@ -18,16 +18,16 @@ namespace DAL.DTO
             get
             {
                 if (Choices == null || Choices.Count == 0)
-                    return new();
+                    return [];
 
-                return new List<OcrText>
-                {
+                return
+                [
                     new OcrText
                     {
                         Text = Choices[0].Message.Content,
                         Confidence = 0.9
                     }
-                };
+                ];
             }
         }
     }

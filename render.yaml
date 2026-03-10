@@ -7,5 +7,6 @@ services:
     envVars:
       - key: ConnectionStrings__DefaultConnection
         sync: false
-      - key: Mistral__ApiKey
+      - key: Groq__ApiKey
         sync: false
+            

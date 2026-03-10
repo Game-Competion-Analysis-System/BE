@@ -1,4 +1,4 @@
-﻿using DAL.Entities;
+using DAL.Entities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,6 +11,7 @@ namespace BIL.Service
     public interface IAIAnalysisService
     {
         Task<Aianalysis> AnalyzeScreenshotAsync(IFormFile file);
-
+        Task<List<Aianalysis>> GetHistoryAsync();
+        Task<Aianalysis?> GetByIdAsync(int id);
     }
 }
