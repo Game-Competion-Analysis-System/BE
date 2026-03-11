@@ -20,7 +20,7 @@ namespace DAL.Repository
         {
             var ocr = await CallGroqOcr(file);
 
-            var upload = new Imageupload
+            var upload = new  Imageupload
             {
                 Imageurl = file.FileName,
                 Uploadtime = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified),
