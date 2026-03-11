@@ -67,15 +67,6 @@ namespace DAL.Repository
                         var gn = gameNameElem.GetString();
                         if (!string.IsNullOrEmpty(gn))
                         {
-                            _context.Aiextractedfields.Add(new Aiextractedfield
-                            {
-                                Analysisid = analysis.Analysisid,
-                                Rawtext = gn.Length > 500 ? string.Concat(gn.AsSpan(0, 497), "...") : gn,
-                                Fieldtype = "GameName",
-                                Confidence = 0.98
-                            });
-
-                            // Find in DB or Local context
                             targetGame = await _context.Games.FirstOrDefaultAsync(g => g.Gamename == gn) 
                                          ?? _context.Games.Local.FirstOrDefault(g => g.Gamename == gn);
                             
@@ -84,6 +75,64 @@ namespace DAL.Repository
                                 targetGame = new Game { Gamename = gn };
                                 _context.Games.Add(targetGame);
                             }
+
+                            _context.Aiextractedfields.Add(new Aiextractedfield
+                            {
+                                Analysisid = analysis.Analysisid,
+                                Rawtext = gn.Length > 500 ? string.Concat(gn.AsSpan(0, 497), "...") : gn,
+                                Fieldtype = "GameName",
+                                Confidence = 0.98
+                            });
+                        }
+                    }
+
+                    // Find or create Server
+                    Server? targetServer = null;
+                    if (root.TryGetProperty("server_name", out var serverNameElem) && serverNameElem.ValueKind != JsonValueKind.Null)
+                    {
+                        var sn = serverNameElem.GetString();
+                        if (!string.IsNullOrEmpty(sn))
+                        {
+                            targetServer = await _context.Servers.FirstOrDefaultAsync(s => s.Servername == sn && s.Gameid == (targetGame != null ? targetGame.Gameid : null))
+                                           ?? _context.Servers.Local.FirstOrDefault(s => s.Servername == sn && (targetGame == null || s.Game == targetGame || s.Gameid == targetGame.Gameid));
+                            if (targetServer == null)
+                            {
+                                targetServer = new Server { Servername = sn, Game = targetGame };
+                                _context.Servers.Add(targetServer);
+                            }
+
+                            _context.Aiextractedfields.Add(new Aiextractedfield
+                            {
+                                Analysisid = analysis.Analysisid,
+                                Rawtext = sn.Length > 500 ? string.Concat(sn.AsSpan(0, 497), "...") : sn,
+                                Fieldtype = "ServerName",
+                                Confidence = 0.95
+                            });
+                        }
+                    }
+
+                    // Find or create Event
+                    Event? targetEvent = null;
+                    if (root.TryGetProperty("event_name", out var eventNameElem) && eventNameElem.ValueKind != JsonValueKind.Null)
+                    {
+                        var en = eventNameElem.GetString();
+                        if (!string.IsNullOrEmpty(en))
+                        {
+                            targetEvent = await _context.Events.FirstOrDefaultAsync(e => e.Eventname == en && e.Gameid == (targetGame != null ? targetGame.Gameid : null))
+                                          ?? _context.Events.Local.FirstOrDefault(e => e.Eventname == en && (targetGame == null || e.Game == targetGame || e.Gameid == targetGame.Gameid));
+                            if (targetEvent == null)
+                            {
+                                targetEvent = new Event { Eventname = en, Game = targetGame, Startdate = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified) };
+                                _context.Events.Add(targetEvent);
+                            }
+
+                            _context.Aiextractedfields.Add(new Aiextractedfield
+                            {
+                                Analysisid = analysis.Analysisid,
+                                Rawtext = en.Length > 500 ? string.Concat(en.AsSpan(0, 497), "...") : en,
+                                Fieldtype = "EventName",
+                                Confidence = 0.95
+                            });
                         }
                     }
 
@@ -92,7 +141,8 @@ namespace DAL.Repository
                     {
                         Title = $"Leaderboard from Analysis #{analysis.Analysisid}",
                         Createdfromanalysisid = analysis.Analysisid,
-                        Metrictype = "Score"
+                        Metrictype = "Score",
+                        Event = targetEvent
                     };
                     _context.Leaderboards.Add(lb);
 
@@ -120,6 +170,53 @@ namespace DAL.Repository
                                 else if (sElem.ValueKind == JsonValueKind.String && double.TryParse(sElem.GetString(), out var sStr)) score = sStr;
                             }
 
+                            // Optional Server/Guild per player
+                            Server? playerServer = targetServer;
+                            if (item.TryGetProperty("server_name", out var pSnElem) && pSnElem.ValueKind != JsonValueKind.Null)
+                            {
+                                var psn = pSnElem.GetString();
+                                if (!string.IsNullOrEmpty(psn))
+                                {
+                                    playerServer = await _context.Servers.FirstOrDefaultAsync(s => s.Servername == psn && s.Gameid == (targetGame != null ? targetGame.Gameid : null))
+                                                 ?? _context.Servers.Local.FirstOrDefault(s => s.Servername == psn && (targetGame == null || s.Game == targetGame || s.Gameid == targetGame.Gameid));
+                                    if (playerServer == null)
+                                    {
+                                        playerServer = new Server { Servername = psn, Game = targetGame };
+                                        _context.Servers.Add(playerServer);
+                                    }
+                                }
+                            }
+
+                            Guild? playerGuild = null;
+                            if (item.TryGetProperty("guild_name", out var gElem) && gElem.ValueKind != JsonValueKind.Null)
+                            {
+                                var gn = gElem.GetString();
+                                if (!string.IsNullOrEmpty(gn))
+                                {
+                                    playerGuild = await _context.Guilds.FirstOrDefaultAsync(g => g.Guildname == gn && g.Serverid == (playerServer != null ? playerServer.Serverid : null))
+                                                 ?? _context.Guilds.Local.FirstOrDefault(g => g.Guildname == gn && (playerServer == null || g.Server == playerServer || g.Serverid == playerServer.Serverid));
+                                    if (playerGuild == null)
+                                    {
+                                        playerGuild = new Guild { Guildname = gn, Server = playerServer };
+                                        _context.Guilds.Add(playerGuild);
+                                    }
+                                }
+                            }
+                            else if (root.TryGetProperty("guild_name", out var globalGuildElem) && globalGuildElem.ValueKind != JsonValueKind.Null)
+                            {
+                                var ggn = globalGuildElem.GetString();
+                                if (!string.IsNullOrEmpty(ggn))
+                                {
+                                    playerGuild = await _context.Guilds.FirstOrDefaultAsync(g => g.Guildname == ggn && g.Serverid == (playerServer != null ? playerServer.Serverid : null))
+                                                 ?? _context.Guilds.Local.FirstOrDefault(g => g.Guildname == ggn && (playerServer == null || g.Server == playerServer || g.Serverid == playerServer.Serverid));
+                                    if (playerGuild == null)
+                                    {
+                                        playerGuild = new Guild { Guildname = ggn, Server = playerServer };
+                                        _context.Guilds.Add(playerGuild);
+                                    }
+                                }
+                            }
+
                             // Find or create player
                             Player? player = null;
                             if (!string.IsNullOrEmpty(pName) && pName != "Unknown")
@@ -133,9 +230,17 @@ namespace DAL.Repository
                                     player = new Player 
                                     { 
                                         Playername = pName,
-                                        Game = targetGame
+                                        Game = targetGame,
+                                        Server = playerServer,
+                                        Guild = playerGuild
                                     };
                                     _context.Players.Add(player);
+                                }
+                                else 
+                                {
+                                    // Update player's server/guild if they are now known
+                                    if (playerServer != null) player.Server = playerServer;
+                                    if (playerGuild != null) player.Guild = playerGuild;
                                 }
                             }
 
@@ -253,7 +358,7 @@ namespace DAL.Repository
                         role = "user",
                         content = (object)new object[]
                         {
-                            new { type = "text", text = "Extract game name, player names, ranks, and scores from this leaderboard. Return as JSON with structure: { 'game_name': '...', 'leaderboard': [ { 'rank': 1, 'player_name': '...', 'score': 100 } ] }" },
+                            new { type = "text", text = "Extract game name, server name, guild name, event name, player names, ranks, and scores from this leaderboard screenshot. Return as JSON with structure: { 'game_name': '...', 'server_name': '...', 'guild_name': '...', 'event_name': '...', 'leaderboard': [ { 'rank': 1, 'player_name': '...', 'score': 100, 'guild_name': '...', 'server_name': '...' } ] }. If guild or server is the same for all players, you can put it in the root or in each entry." },
                             new
                             {
                                 type = "image_url",
