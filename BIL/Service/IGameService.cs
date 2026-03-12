@@ -1,3 +1,4 @@
+using DAL.DTO;
 using DAL.Entities;
 using System;
 using System.Collections.Generic;
@@ -9,7 +10,7 @@ namespace BIL.Service
 {
     public interface IGameService
     {
-        List<Game> GetAllGames();
+        List<GameDto> GetAllGames();
         List<Game> GetMMORPGGames();
         List<Game> SearchByName(string name);
         void Create(Game game);

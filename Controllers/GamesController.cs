@@ -1,4 +1,5 @@
 using BIL.Service;
+using DAL.DTO;
 using DAL.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,7 +13,7 @@ namespace GameCompetionAnalysisSystem.Controllers
     {
         [HttpGet]
         [AllowAnonymous]
-        public IActionResult GetAll()
+        public IActionResult GetList()
             => Ok(service.GetAllGames());
 
         [HttpGet("search")]

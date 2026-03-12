@@ -1,6 +1,8 @@
 using BIL.Service;
+using DAL.DTO;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace GameCompetionAnalysisSystem.Controllers
 {
@@ -13,14 +15,24 @@ namespace GameCompetionAnalysisSystem.Controllers
         [Consumes("multipart/form-data")]
         public async Task<IActionResult> Analyze(IFormFile file)
         {
-            var result = await service.AnalyzeScreenshotAsync(file);
+            var userIdStr = User.FindFirst("UserId")?.Value;
+            if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out int userId))
+                return Unauthorized();
+
+            var result = await service.AnalyzeScreenshotAsync(file, userId);
             return Ok(result);
         }
 
-        [HttpGet("history")]
-        public async Task<IActionResult> GetHistory()
+        [HttpGet]
+        public async Task<IActionResult> GetList()
         {
-            return Ok(await service.GetHistoryAsync());
+            var userIdStr = User.FindFirst("UserId")?.Value;
+            if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out int userId))
+                return Unauthorized();
+
+            var role = User.FindFirst(ClaimTypes.Role)?.Value;
+
+            return Ok(await service.GetHistoryAsync(userId, role));
         }
 
         [HttpGet("{id}")]
@@ -39,7 +51,14 @@ namespace GameCompetionAnalysisSystem.Controllers
             if (result == null) return NotFound();
             return Ok(result);
         }
+
+        [HttpDelete("{id}")]
+        [Authorize(Roles = "admin")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var success = await service.DeleteAsync(id);
+            if (!success) return NotFound();
+            return NoContent();
+        }
     }
-
-
 }

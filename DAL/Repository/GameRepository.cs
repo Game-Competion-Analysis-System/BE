@@ -1,3 +1,4 @@
+using DAL.DTO;
 using DAL.Entities;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -21,8 +22,6 @@ namespace DAL.Repository
         {
             return _context.Games
                 .Include(g => g.Company)
-                .Include(g => g.Events)
-                .Include(g => g.Players)
                 .ToList();
         }
 

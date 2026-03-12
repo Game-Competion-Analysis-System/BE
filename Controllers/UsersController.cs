@@ -1,4 +1,5 @@
 using BIL.Service;
+using DAL.DTO;
 using DAL.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -16,7 +17,7 @@ namespace GameCompetionAnalysisSystem.Controllers
 
         [HttpGet]
         [Authorize(Roles = "admin")]
-        public IActionResult GetAll() => Ok(_service.GetAll());
+        public IActionResult GetList() => Ok(_service.GetAll());
 
         [HttpGet("profile")]
         public IActionResult GetProfile()

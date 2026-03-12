@@ -13,14 +13,23 @@ namespace BIL.Service
 {
     public class AIAnalysisService(IAIAnalysisRepository repo) : IAIAnalysisService
     {
-        public Task<Aianalysis> AnalyzeScreenshotAsync(IFormFile file)
+        public async Task<AnalysisResultDto?> AnalyzeScreenshotAsync(IFormFile file, int userId)
         {
-            return repo.ProcessScreenshotAsync(file);
+            var analysis = await repo.ProcessScreenshotAsync(file, userId);
+            if (analysis == null) return null;
+            return await GetAnalysisResultAsync(analysis.Analysisid);
         }
 
-        public async Task<List<Aianalysis>> GetHistoryAsync()
+        public async Task<List<AnalysisResultDto>> GetHistoryAsync(int userId, string? role)
         {
-            return await repo.GetAllAsync();
+            int? filterUserId = (role?.ToLower() == "admin") ? null : userId;
+            var analyses = await repo.GetAllAsync(filterUserId);
+            var results = new List<AnalysisResultDto>();
+            foreach (var a in analyses)
+            {
+                results.Add(await GetAnalysisResultAsync(a.Analysisid));
+            }
+            return results;
         }
 
         public async Task<Aianalysis?> GetByIdAsync(int id)
@@ -35,17 +44,39 @@ namespace BIL.Service
 
             var leaderboard = analysis.Leaderboards.FirstOrDefault();
             var eventObj = leaderboard?.Event;
-            var game = eventObj?.Game;
-            var server = game?.Servers.FirstOrDefault(); // Simplified logic
+            
+            // Get GameName and ServerName from extracted fields first (prioritize user input or high confidence AI)
+            var gameName = analysis.Aiextractedfields
+                .Where(f => f.Fieldtype == "GameName")
+                .OrderByDescending(f => f.Confidence)
+                .Select(f => f.Rawtext)
+                .FirstOrDefault();
+
+            var serverName = analysis.Aiextractedfields
+                .Where(f => f.Fieldtype == "ServerName")
+                .OrderByDescending(f => f.Confidence)
+                .Select(f => f.Rawtext)
+                .FirstOrDefault();
+
+            // Fallback to linked entities if not in extracted fields
+            if (string.IsNullOrEmpty(gameName))
+            {
+                gameName = eventObj?.Game?.Gamename;
+            }
+            if (string.IsNullOrEmpty(serverName))
+            {
+                // Try to get server name from the first player in the leaderboard
+                serverName = leaderboard?.Leaderboardentries.FirstOrDefault()?.Player?.Server?.Servername;
+            }
 
             var result = new AnalysisResultDto
             {
                 AnalysisId = analysis.Analysisid,
                 ImageUrl = analysis.Upload?.Imageurl,
                 ProcessedTime = analysis.Processedtime,
-                GameName = game?.Gamename,
+                GameName = gameName,
                 EventName = eventObj?.Eventname,
-                ServerName = server?.Servername,
+                ServerName = serverName,
                 Leaderboard = []
             };
 
@@ -56,7 +87,7 @@ namespace BIL.Service
                     .Select(e => new LeaderboardEntryDto
                     {
                         Rank = e.Rank ?? 0,
-                        PlayerName = e.Player?.Playername,
+                        PlayerName = e.Player?.Playername ?? "Unknown",
                         Score = e.Value ?? 0,
                         GuildName = e.Player?.Guild?.Guildname
                     })
@@ -64,6 +95,11 @@ namespace BIL.Service
             }
 
             return result;
+        }
+
+        public async Task<bool> DeleteAsync(int id)
+        {
+            return await repo.DeleteAsync(id);
         }
     }
 }

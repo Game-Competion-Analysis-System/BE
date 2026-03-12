@@ -1,3 +1,4 @@
+using DAL.DTO;
 using DAL.Entities;
 using DAL.Repository;
 using System;
@@ -17,7 +18,13 @@ namespace BIL.Service
             _repo = repo;
         }
 
-        public List<Game> GetAllGames() => _repo.GetAll();
+        public List<GameDto> GetAllGames() => _repo.GetAll().Select(g => new GameDto
+        {
+            GameId = g.Gameid,
+            GameName = g.Gamename,
+            Genre = g.Genre,
+            CompanyName = g.Company?.Companyname
+        }).ToList();
 
         public List<Game> GetMMORPGGames() => _repo.GetMMORPG();
 

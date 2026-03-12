@@ -1,3 +1,4 @@
+using DAL.DTO;
 using DAL.Entities;
 using DAL.Repository;
 using System.Collections.Generic;
@@ -13,7 +14,15 @@ namespace BIL.Service
             _repo = repo;
         }
 
-        public List<Event> GetAll() => _repo.GetAll();
+        public List<EventDto> GetAll() => _repo.GetAll().Select(e => new EventDto
+        {
+            EventId = e.Eventid,
+            EventName = e.Eventname,
+            EventType = e.Eventtype,
+            StartDate = e.Startdate,
+            EndDate = e.Enddate,
+            GameName = e.Game?.Gamename
+        }).ToList();
         public Event? GetById(int id) => _repo.GetById(id);
         public List<Event> GetByGame(int gameId) => _repo.GetByGame(gameId);
         public List<Event> SearchByName(string name) => _repo.SearchByName(name);

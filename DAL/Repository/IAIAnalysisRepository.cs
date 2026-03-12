@@ -1,20 +1,16 @@
+using DAL.DTO;
 using DAL.Entities;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace DAL.Repository
-{
-    public interface IAIAnalysisRepository
+{  public interface IAIAnalysisRepository
     {
-        Task<Aianalysis> ProcessScreenshotAsync(IFormFile file);
-        Task<List<Aianalysis>> GetAllAsync();
+        Task<Aianalysis> ProcessScreenshotAsync(IFormFile file, int userId);
+        Task<List<Aianalysis>> GetAllAsync(int? userId = null);
         Task<Aianalysis?> GetByIdAsync(int id);
         Task<Aianalysis?> GetByIdWithDetailsAsync(int id);
+        Task<bool> DeleteAsync(int id);
     }
-
-
 }
