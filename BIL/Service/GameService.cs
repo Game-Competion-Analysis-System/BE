@@ -1,4 +1,4 @@
-﻿using DAL.Entities;
+using DAL.Entities;
 using DAL.Repository;
 using System;
 using System.Collections.Generic;
@@ -20,6 +20,8 @@ namespace BIL.Service
         public List<Game> GetAllGames() => _repo.GetAll();
 
         public List<Game> GetMMORPGGames() => _repo.GetMMORPG();
+
+        public List<Game> SearchByName(string name) => _repo.SearchByName(name);
 
         public void Create(Game game) => _repo.Add(game);
         public Game? GetById(int id) => _repo.GetById(id);

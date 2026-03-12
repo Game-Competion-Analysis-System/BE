@@ -8,26 +8,23 @@ namespace GameCompetionAnalysisSystem.Controllers
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
-    public class GamesController : ControllerBase
+    public class GamesController(IGameService service) : ControllerBase
     {
-        private readonly IGameService _service;
-
-        public GamesController(IGameService service)
-        {
-            _service = service;
-        }
-
         [HttpGet]
         [AllowAnonymous]
         public IActionResult GetAll()
-            => Ok(_service.GetAllGames());
+            => Ok(service.GetAllGames());
+
+        [HttpGet("search")]
+        [AllowAnonymous]
+        public IActionResult Search([FromQuery] string name) => Ok(service.SearchByName(name));
 
         //Get by ID
         [HttpGet("{id}")]
         [AllowAnonymous]
         public IActionResult GetById(int id)
         {
-            var game = _service.GetById(id);
+            var game = service.GetById(id);
             if (game == null) return NotFound();
             return Ok(game);
         }
@@ -36,7 +33,7 @@ namespace GameCompetionAnalysisSystem.Controllers
         [Authorize(Roles = "admin")]
         public IActionResult Create(Game game)
         {
-            _service.Add(game);
+            service.Add(game);
             return Ok(game);
         }
 
@@ -44,7 +41,7 @@ namespace GameCompetionAnalysisSystem.Controllers
         [HttpGet("mmorpg")]
         [AllowAnonymous]
         public IActionResult GetMMORPG()
-            => Ok(_service.GetMMORPGGames());
+            => Ok(service.GetMMORPGGames());
 
         //Update
         [HttpPut("{id}")]
@@ -52,7 +49,7 @@ namespace GameCompetionAnalysisSystem.Controllers
         public IActionResult Update(int id, [FromBody] Game game)
         {
             game.Gameid = id;
-            _service.Update(game);
+            service.Update(game);
             return Ok(game);
         }
         //Delete
@@ -60,10 +57,10 @@ namespace GameCompetionAnalysisSystem.Controllers
         [Authorize(Roles = "admin")]
         public IActionResult Delete(int id)
         {
-            var game = _service.GetById(id);
+            var game = service.GetById(id);
             if (game == null) return NotFound();
 
-            _service.Delete(id);
+            service.Delete(id);
             return Ok(new { message = "Game deleted successfully" });
         }
 

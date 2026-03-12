@@ -11,30 +11,32 @@ namespace GameCompetionAnalysisSystem.Controllers
     [Authorize]
     public class EventsController(IEventService service) : ControllerBase
     {
-        private readonly IEventService _service = service;
-
         [HttpGet]
         [AllowAnonymous]
-        public IActionResult GetAll() => Ok(_service.GetAll());
+        public IActionResult GetAll() => Ok(service.GetAll());
+
+        [HttpGet("search")]
+        [AllowAnonymous]
+        public IActionResult Search([FromQuery] string name) => Ok(service.SearchByName(name));
 
         [HttpGet("{id}")]
         [AllowAnonymous]
         public IActionResult GetById(int id)
         {
-            var @event = _service.GetById(id);
+            var @event = service.GetById(id);
             if (@event == null) return NotFound();
             return Ok(@event);
         }
 
         [HttpGet("game/{gameId}")]
         [AllowAnonymous]
-        public IActionResult GetByGame(int gameId) => Ok(_service.GetByGame(gameId));
+        public IActionResult GetByGame(int gameId) => Ok(service.GetByGame(gameId));
 
         [HttpPost]
         [Authorize(Roles = "admin")]
         public IActionResult Create(Event @event)
         {
-            _service.Add(@event);
+            service.Add(@event);
             return Ok(@event);
         }
 
@@ -43,7 +45,7 @@ namespace GameCompetionAnalysisSystem.Controllers
         public IActionResult Update(int id, [FromBody] Event @event)
         {
             @event.Eventid = id;
-            _service.Update(@event);
+            service.Update(@event);
             return Ok(@event);
         }
 
@@ -51,7 +53,7 @@ namespace GameCompetionAnalysisSystem.Controllers
         [Authorize(Roles = "admin")]
         public IActionResult Delete(int id)
         {
-            _service.Delete(id);
+            service.Delete(id);
             return Ok(new { message = "Event deleted successfully" });
         }
     }

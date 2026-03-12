@@ -14,17 +14,55 @@ namespace DAL.Repository
             _context = context;
         }
 
-        public List<Player> GetAll() => _context.Players.Include(p => p.Game).Include(p => p.Server).Include(p => p.Guild).ToList();
+        public List<Player> GetAll() => _context.Players
+            .Include(p => p.Game)
+            .Include(p => p.Server)
+            .Include(p => p.Guild)
+            .Include(p => p.Leaderboardentries)
+            .ToList();
 
-        public Player? GetById(int id) => _context.Players.Include(p => p.Game).Include(p => p.Server).Include(p => p.Guild).FirstOrDefault(p => p.Playerid == id);
+        public Player? GetById(int id) => _context.Players
+            .Include(p => p.Game)
+            .Include(p => p.Server)
+            .Include(p => p.Guild)
+            .Include(p => p.Leaderboardentries)
+            .FirstOrDefault(p => p.Playerid == id);
 
-        public List<Player> GetByGame(int gameId) => _context.Players.Where(p => p.Gameid == gameId).ToList();
+        public List<Player> GetByGame(int gameId) => _context.Players
+            .Include(p => p.Game)
+            .Include(p => p.Server)
+            .Include(p => p.Guild)
+            .Include(p => p.Leaderboardentries)
+            .Where(p => p.Gameid == gameId)
+            .ToList();
 
-        public List<Player> GetByServer(int serverId) => _context.Players.Where(p => p.Serverid == serverId).ToList();
+        public List<Player> GetByServer(int serverId) => _context.Players
+            .Include(p => p.Game)
+            .Include(p => p.Server)
+            .Include(p => p.Guild)
+            .Include(p => p.Leaderboardentries)
+            .Where(p => p.Serverid == serverId)
+            .ToList();
 
-        public List<Player> GetByGuild(int guildId) => _context.Players.Where(p => p.Guildid == guildId).ToList();
+        public List<Player> GetByGuild(int guildId) => _context.Players
+            .Include(p => p.Game)
+            .Include(p => p.Server)
+            .Include(p => p.Guild)
+            .Include(p => p.Leaderboardentries)
+            .Where(p => p.Guildid == guildId)
+            .ToList();
 
-        public List<Player> SearchByName(string name) => _context.Players.Where(p => p.Playername != null && p.Playername.Contains(name)).ToList();
+        public List<Player> SearchByName(string name)
+        {
+            var pattern = $"%{name.Replace(" ", "%").Replace("-", "%")}%";
+            return _context.Players
+                .Include(p => p.Game)
+                .Include(p => p.Server)
+                .Include(p => p.Guild)
+                .Include(p => p.Leaderboardentries)
+                .Where(p => p.Playername != null && EF.Functions.ILike(p.Playername, pattern))
+                .ToList();
+        }
 
         public void Add(Player player)
         {

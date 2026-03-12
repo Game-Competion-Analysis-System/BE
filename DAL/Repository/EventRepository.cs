@@ -20,6 +20,15 @@ namespace DAL.Repository
 
         public List<Event> GetByGame(int gameId) => _context.Events.Where(e => e.Gameid == gameId).ToList();
 
+        public List<Event> SearchByName(string name)
+        {
+            var pattern = $"%{name.Replace(" ", "%").Replace("-", "%")}%";
+            return _context.Events
+                .Include(e => e.Game)
+                .Where(e => e.Eventname != null && EF.Functions.ILike(e.Eventname, pattern))
+                .ToList();
+        }
+
         public void Add(Event @event)
         {
             _context.Events.Add(@event);

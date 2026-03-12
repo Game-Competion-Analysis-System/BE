@@ -11,42 +11,40 @@ namespace GameCompetionAnalysisSystem.Controllers
     [Authorize]
     public class PlayersController(IPlayerService service) : ControllerBase
     {
-        private readonly IPlayerService _service = service;
-
         [HttpGet]
         [AllowAnonymous]
-        public IActionResult GetAll() => Ok(_service.GetAll());
+        public IActionResult GetAll() => Ok(service.GetAll());
 
         [HttpGet("{id}")]
         [AllowAnonymous]
         public IActionResult GetById(int id)
         {
-            var player = _service.GetById(id);
+            var player = service.GetById(id);
             if (player == null) return NotFound();
             return Ok(player);
         }
 
         [HttpGet("search")]
         [AllowAnonymous]
-        public IActionResult Search([FromQuery] string name) => Ok(_service.SearchByName(name));
+        public IActionResult Search([FromQuery] string name) => Ok(service.SearchByName(name));
 
         [HttpGet("game/{gameId}")]
         [AllowAnonymous]
-        public IActionResult GetByGame(int gameId) => Ok(_service.GetByGame(gameId));
+        public IActionResult GetByGame(int gameId) => Ok(service.GetByGame(gameId));
 
         [HttpGet("server/{serverId}")]
         [AllowAnonymous]
-        public IActionResult GetByServer(int serverId) => Ok(_service.GetByServer(serverId));
+        public IActionResult GetByServer(int serverId) => Ok(service.GetByServer(serverId));
 
         [HttpGet("guild/{guildId}")]
         [AllowAnonymous]
-        public IActionResult GetByGuild(int guildId) => Ok(_service.GetByGuild(guildId));
+        public IActionResult GetByGuild(int guildId) => Ok(service.GetByGuild(guildId));
 
         [HttpPost]
         [Authorize(Roles = "admin")]
         public IActionResult Create(Player player)
         {
-            _service.Add(player);
+            service.Add(player);
             return Ok(player);
         }
 
@@ -55,7 +53,7 @@ namespace GameCompetionAnalysisSystem.Controllers
         public IActionResult Update(int id, [FromBody] Player player)
         {
             player.Playerid = id;
-            _service.Update(player);
+            service.Update(player);
             return Ok(player);
         }
 
@@ -63,7 +61,7 @@ namespace GameCompetionAnalysisSystem.Controllers
         [Authorize(Roles = "admin")]
         public IActionResult Delete(int id)
         {
-            _service.Delete(id);
+            service.Delete(id);
             return Ok(new { message = "Player deleted successfully" });
         }
     }

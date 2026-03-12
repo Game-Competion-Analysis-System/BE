@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace DAL.Entities;
@@ -19,5 +19,5 @@ public partial class Leaderboard
 
     public virtual Event? Event { get; set; }
 
-    public virtual ICollection<Leaderboardentry> Leaderboardentries { get; set; } = new List<Leaderboardentry>();
+    public virtual ICollection<Leaderboardentry> Leaderboardentries { get; set; } = [];
 }

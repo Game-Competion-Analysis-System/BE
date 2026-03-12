@@ -64,6 +64,16 @@ namespace DAL.Repository
                 .ToListAsync();
         }
 
+        public async Task<List<Leaderboardentry>> GetSortedEntriesByLeaderboardIdAsync(int leaderboardId)
+        {
+            return await _context.Leaderboardentries
+                .Include(x => x.Player)
+                .Where(x => x.Leaderboardid == leaderboardId)
+                .OrderByDescending(x => x.Value)
+                .ThenBy(x => x.Rank)
+                .ToListAsync();
+        }
+
         public async Task DeleteAsync(int id)
         {
             var lb = await _context.Leaderboards.FindAsync(id);

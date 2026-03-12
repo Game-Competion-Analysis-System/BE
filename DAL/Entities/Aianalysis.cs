@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace DAL.Entities;
@@ -15,9 +15,9 @@ public partial class Aianalysis
 
     public DateTime? Processedtime { get; set; }
 
-    public virtual ICollection<Aiextractedfield> Aiextractedfields { get; set; } = new List<Aiextractedfield>();
+    public virtual ICollection<Aiextractedfield> Aiextractedfields { get; set; } = [];
 
-    public virtual ICollection<Leaderboard> Leaderboards { get; set; } = new List<Leaderboard>();
+    public virtual ICollection<Leaderboard> Leaderboards { get; set; } = [];
 
     public virtual Imageupload? Upload { get; set; }
 }

@@ -1,4 +1,4 @@
-﻿using DAL.Entities;
+using DAL.Entities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,6 +11,7 @@ namespace BIL.Service
     {
         List<Game> GetAllGames();
         List<Game> GetMMORPGGames();
+        List<Game> SearchByName(string name);
         void Create(Game game);
         Game? GetById(int id);
         void Add(Game game);

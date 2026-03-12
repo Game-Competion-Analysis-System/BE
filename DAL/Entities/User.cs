@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace DAL.Entities;
@@ -15,5 +15,5 @@ public partial class User
 
     public string? Role { get; set; }
 
-    public virtual ICollection<Imageupload> Imageuploads { get; set; } = new List<Imageupload>();
+    public virtual ICollection<Imageupload> Imageuploads { get; set; } = [];
 }

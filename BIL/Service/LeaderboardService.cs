@@ -37,6 +37,11 @@ namespace BIL.Service
             return await _repo.GetEntriesByLeaderboardIdAsync(leaderboardId);
         }
 
+        public async Task<List<Leaderboardentry>> GetSortedEntriesByLeaderboardIdAsync(int leaderboardId)
+        {
+            return await _repo.GetSortedEntriesByLeaderboardIdAsync(leaderboardId);
+        }
+
         public async Task DeleteAsync(int id)
         {
             await _repo.DeleteAsync(id);

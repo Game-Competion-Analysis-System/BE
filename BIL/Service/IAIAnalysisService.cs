@@ -1,4 +1,5 @@
 using DAL.Entities;
+using DAL.DTO;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,5 +14,6 @@ namespace BIL.Service
         Task<Aianalysis> AnalyzeScreenshotAsync(IFormFile file);
         Task<List<Aianalysis>> GetHistoryAsync();
         Task<Aianalysis?> GetByIdAsync(int id);
+        Task<AnalysisResultDto?> GetAnalysisResultAsync(int id);
     }
 }

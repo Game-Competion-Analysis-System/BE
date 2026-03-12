@@ -1,4 +1,4 @@
-﻿using DAL.Entities;
+using DAL.Entities;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
@@ -29,8 +29,16 @@ namespace DAL.Repository
 
         public List<Game> GetMMORPG()
             => _context.Games
-                .Where(g => g.Genre.Contains("MMORPG"))
+                .Where(g => g.Genre != null && g.Genre.Contains("MMORPG"))
                 .ToList();
+
+        public List<Game> SearchByName(string name)
+        {
+            var pattern = $"%{name.Replace(" ", "%").Replace("-", "%")}%";
+            return _context.Games
+                .Where(g => g.Gamename != null && EF.Functions.ILike(g.Gamename, pattern))
+                .ToList();
+        }
 
         public Game? GetById(int id)
         {

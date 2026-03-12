@@ -16,6 +16,7 @@ namespace BIL.Service
         public List<Server> GetAll() => _repo.GetAll();
         public Server? GetById(int id) => _repo.GetById(id);
         public List<Server> GetByGame(int gameId) => _repo.GetByGame(gameId);
+        public List<Server> SearchByName(string name) => _repo.SearchByName(name);
         public void Add(Server server) => _repo.Add(server);
         public void Update(Server server) => _repo.Update(server);
         public void Delete(int id) => _repo.Delete(id);

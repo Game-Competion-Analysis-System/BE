@@ -14,6 +14,7 @@ namespace BIL.Service
         Task<List<Leaderboard>> GetAllAsync();
         Task<Leaderboard?> GetByIdAsync(int id);
         Task<List<Leaderboardentry>> GetEntriesByLeaderboardIdAsync(int leaderboardId);
+        Task<List<Leaderboardentry>> GetSortedEntriesByLeaderboardIdAsync(int leaderboardId);
         Task DeleteAsync(int id);
     }
 

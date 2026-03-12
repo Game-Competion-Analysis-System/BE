@@ -1,5 +1,6 @@
 using DAL.DTO;
 using DAL.Entities;
+using DAL.Helper;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -72,6 +73,14 @@ namespace DAL.Repository
                             
                             if (targetGame == null)
                             {
+                                // Try fuzzy search if exact fails
+                                var normalizedGn = StringNormalizationHelper.Normalize(gn);
+                                var candidates = await _context.Games.ToListAsync();
+                                targetGame = candidates.FirstOrDefault(g => StringNormalizationHelper.Normalize(g.Gamename) == normalizedGn);
+                            }
+
+                            if (targetGame == null)
+                            {
                                 targetGame = new Game { Gamename = gn };
                                 _context.Games.Add(targetGame);
                             }
@@ -95,6 +104,14 @@ namespace DAL.Repository
                         {
                             targetServer = await _context.Servers.FirstOrDefaultAsync(s => s.Servername == sn && s.Gameid == (targetGame != null ? targetGame.Gameid : null))
                                            ?? _context.Servers.Local.FirstOrDefault(s => s.Servername == sn && (targetGame == null || s.Game == targetGame || s.Gameid == targetGame.Gameid));
+                            
+                            if (targetServer == null)
+                            {
+                                var normalizedSn = StringNormalizationHelper.Normalize(sn);
+                                var candidates = await _context.Servers.Where(s => s.Gameid == (targetGame != null ? targetGame.Gameid : null)).ToListAsync();
+                                targetServer = candidates.FirstOrDefault(s => StringNormalizationHelper.Normalize(s.Servername) == normalizedSn);
+                            }
+
                             if (targetServer == null)
                             {
                                 targetServer = new Server { Servername = sn, Game = targetGame };
@@ -120,6 +137,14 @@ namespace DAL.Repository
                         {
                             targetEvent = await _context.Events.FirstOrDefaultAsync(e => e.Eventname == en && e.Gameid == (targetGame != null ? targetGame.Gameid : null))
                                           ?? _context.Events.Local.FirstOrDefault(e => e.Eventname == en && (targetGame == null || e.Game == targetGame || e.Gameid == targetGame.Gameid));
+                            
+                            if (targetEvent == null)
+                            {
+                                var normalizedEn = StringNormalizationHelper.Normalize(en);
+                                var candidates = await _context.Events.Where(e => e.Gameid == (targetGame != null ? targetGame.Gameid : null)).ToListAsync();
+                                targetEvent = candidates.FirstOrDefault(e => StringNormalizationHelper.Normalize(e.Eventname) == normalizedEn);
+                            }
+
                             if (targetEvent == null)
                             {
                                 targetEvent = new Event { Eventname = en, Game = targetGame, Startdate = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified) };
@@ -179,6 +204,14 @@ namespace DAL.Repository
                                 {
                                     playerServer = await _context.Servers.FirstOrDefaultAsync(s => s.Servername == psn && s.Gameid == (targetGame != null ? targetGame.Gameid : null))
                                                  ?? _context.Servers.Local.FirstOrDefault(s => s.Servername == psn && (targetGame == null || s.Game == targetGame || s.Gameid == targetGame.Gameid));
+                                    
+                                    if (playerServer == null)
+                                    {
+                                        var normalizedPsn = StringNormalizationHelper.Normalize(psn);
+                                        var candidates = await _context.Servers.Where(s => s.Gameid == (targetGame != null ? targetGame.Gameid : null)).ToListAsync();
+                                        playerServer = candidates.FirstOrDefault(s => StringNormalizationHelper.Normalize(s.Servername) == normalizedPsn);
+                                    }
+
                                     if (playerServer == null)
                                     {
                                         playerServer = new Server { Servername = psn, Game = targetGame };
@@ -195,6 +228,14 @@ namespace DAL.Repository
                                 {
                                     playerGuild = await _context.Guilds.FirstOrDefaultAsync(g => g.Guildname == gn && g.Serverid == (playerServer != null ? playerServer.Serverid : null))
                                                  ?? _context.Guilds.Local.FirstOrDefault(g => g.Guildname == gn && (playerServer == null || g.Server == playerServer || g.Serverid == playerServer.Serverid));
+                                    
+                                    if (playerGuild == null)
+                                    {
+                                        var normalizedGn = StringNormalizationHelper.Normalize(gn);
+                                        var candidates = await _context.Guilds.Where(g => g.Serverid == (playerServer != null ? playerServer.Serverid : null)).ToListAsync();
+                                        playerGuild = candidates.FirstOrDefault(g => StringNormalizationHelper.Normalize(g.Guildname) == normalizedGn);
+                                    }
+
                                     if (playerGuild == null)
                                     {
                                         playerGuild = new Guild { Guildname = gn, Server = playerServer };
@@ -225,6 +266,13 @@ namespace DAL.Repository
                                 player = await _context.Players.FirstOrDefaultAsync(p => p.Playername == pName && p.Gameid == (targetGame != null ? targetGame.Gameid : null))
                                          ?? _context.Players.Local.FirstOrDefault(p => p.Playername == pName && (targetGame == null || p.Game == targetGame || p.Gameid == targetGame.Gameid));
                                 
+                                if (player == null)
+                                {
+                                    var normalizedPName = StringNormalizationHelper.Normalize(pName);
+                                    var candidates = await _context.Players.Where(p => p.Gameid == (targetGame != null ? targetGame.Gameid : null)).ToListAsync();
+                                    player = candidates.FirstOrDefault(p => StringNormalizationHelper.Normalize(p.Playername) == normalizedPName);
+                                }
+
                                 if (player == null)
                                 {
                                     player = new Player 
@@ -331,6 +379,24 @@ namespace DAL.Repository
             return await _context.Aianalyses.Include(a => a.Aiextractedfields).FirstOrDefaultAsync(a => a.Analysisid == id);
         }
 
+        public async Task<Aianalysis?> GetByIdWithDetailsAsync(int id)
+        {
+            return await _context.Aianalyses
+                .Include(a => a.Upload)
+                .Include(a => a.Leaderboards)
+                    .ThenInclude(lb => lb.Leaderboardentries)
+                        .ThenInclude(e => e.Player)
+                            .ThenInclude(p => p.Guild)
+                .Include(a => a.Leaderboards)
+                    .ThenInclude(lb => lb.Event)
+                        .ThenInclude(ev => ev.Game)
+                .Include(a => a.Leaderboards)
+                    .ThenInclude(lb => lb.Event)
+                        .ThenInclude(ev => ev.Game)
+                            .ThenInclude(g => g.Servers)
+                .FirstOrDefaultAsync(a => a.Analysisid == id);
+        }
+
         private async Task<MistralOcrResultDto> CallGroqOcr(IFormFile file)
         {
             var apiKey = _config["Groq:ApiKey"] ?? throw new Exception("Missing Groq API Key");
@@ -358,7 +424,7 @@ namespace DAL.Repository
                         role = "user",
                         content = (object)new object[]
                         {
-                            new { type = "text", text = "Extract game name, server name, guild name, event name, player names, ranks, and scores from this leaderboard screenshot. Return as JSON with structure: { 'game_name': '...', 'server_name': '...', 'guild_name': '...', 'event_name': '...', 'leaderboard': [ { 'rank': 1, 'player_name': '...', 'score': 100, 'guild_name': '...', 'server_name': '...' } ] }. If guild or server is the same for all players, you can put it in the root or in each entry." },
+                            new { type = "text", text = "Extract game name, server name, guild name, event name, player names, ranks, and scores from this leaderboard screenshot. Return as JSON with structure: { 'game_name': '...', 'server_name': '...', 'guild_name': '...', 'event_name': '...', 'leaderboard': [ { 'rank': 1, 'player_name': '...', 'score': 100, 'guild_name': '...', 'server_name': '...' } ] }. If guild or server is the same for all players, you can put it in the root or in each entry. Note: In Vietnamese game UI, 'Hạng' is rank, 'Thủ Lĩnh' is leader/player, 'Uy Danh' or 'Điểm' is score, 'Bang Hội' is guild." },
                             new
                             {
                                 type = "image_url",

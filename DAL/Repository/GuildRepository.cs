@@ -20,6 +20,15 @@ namespace DAL.Repository
 
         public List<Guild> GetByServer(int serverId) => _context.Guilds.Where(g => g.Serverid == serverId).ToList();
 
+        public List<Guild> SearchByName(string name)
+        {
+            var pattern = $"%{name.Replace(" ", "%").Replace("-", "%")}%";
+            return _context.Guilds
+                .Include(g => g.Server)
+                .Where(g => g.Guildname != null && EF.Functions.ILike(g.Guildname, pattern))
+                .ToList();
+        }
+
         public void Add(Guild guild)
         {
             _context.Guilds.Add(guild);

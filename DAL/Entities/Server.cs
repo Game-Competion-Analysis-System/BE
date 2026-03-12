@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace DAL.Entities;
@@ -17,7 +17,7 @@ public partial class Server
 
     public virtual Game? Game { get; set; }
 
-    public virtual ICollection<Guild> Guilds { get; set; } = new List<Guild>();
+    public virtual ICollection<Guild> Guilds { get; set; } = [];
 
-    public virtual ICollection<Player> Players { get; set; } = new List<Player>();
+    public virtual ICollection<Player> Players { get; set; } = [];
 }

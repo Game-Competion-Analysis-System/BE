@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace DAL.Entities;
@@ -17,7 +17,7 @@ public partial class Imageupload
 
     public string? Status { get; set; }
 
-    public virtual ICollection<Aianalysis> Aianalyses { get; set; } = new List<Aianalysis>();
+    public virtual ICollection<Aianalysis> Aianalyses { get; set; } = [];
 
     public virtual Event? Event { get; set; }
 

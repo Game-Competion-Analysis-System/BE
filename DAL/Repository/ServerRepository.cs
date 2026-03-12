@@ -20,6 +20,15 @@ namespace DAL.Repository
 
         public List<Server> GetByGame(int gameId) => _context.Servers.Where(s => s.Gameid == gameId).ToList();
 
+        public List<Server> SearchByName(string name)
+        {
+            var pattern = $"%{name.Replace(" ", "%").Replace("-", "%")}%";
+            return _context.Servers
+                .Include(s => s.Game)
+                .Where(s => s.Servername != null && EF.Functions.ILike(s.Servername, pattern))
+                .ToList();
+        }
+
         public void Add(Server server)
         {
             _context.Servers.Add(server);

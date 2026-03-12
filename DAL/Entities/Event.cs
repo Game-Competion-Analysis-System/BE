@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace DAL.Entities;
@@ -19,7 +19,7 @@ public partial class Event
 
     public virtual Game? Game { get; set; }
 
-    public virtual ICollection<Imageupload> Imageuploads { get; set; } = new List<Imageupload>();
+    public virtual ICollection<Imageupload> Imageuploads { get; set; } = [];
 
-    public virtual ICollection<Leaderboard> Leaderboards { get; set; } = new List<Leaderboard>();
+    public virtual ICollection<Leaderboard> Leaderboards { get; set; } = [];
 }

@@ -13,6 +13,7 @@ namespace DAL.Repository
         Task<Aianalysis> ProcessScreenshotAsync(IFormFile file);
         Task<List<Aianalysis>> GetAllAsync();
         Task<Aianalysis?> GetByIdAsync(int id);
+        Task<Aianalysis?> GetByIdWithDetailsAsync(int id);
     }
 
 

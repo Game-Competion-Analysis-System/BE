@@ -1,4 +1,4 @@
-﻿using DAL.Entities;
+using DAL.Entities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,6 +11,7 @@ namespace DAL.Repository
     {
         List<Game> GetAll();
         List<Game> GetMMORPG();
+        List<Game> SearchByName(string name);
         Game? GetById(int id);
         void Add(Game game);
         void Update(Game game);
