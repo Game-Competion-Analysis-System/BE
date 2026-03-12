@@ -85,312 +85,171 @@ namespace DAL.Repository
                     throw new Exception("AI returned empty content");
                 }
                 
-                // Robust JSON extraction
-                var jsonStartIndex = content.IndexOf('{');
-                var jsonEndIndex = content.LastIndexOf('}');
+                // Robust JSON extraction using a more flexible approach
+                string jsonContent = content;
+                var startIdx = content.IndexOf('{');
+                var endIdx = content.LastIndexOf('}');
                 
-                if (jsonStartIndex != -1 && jsonEndIndex != -1 && jsonEndIndex > jsonStartIndex)
+                if (startIdx != -1 && endIdx != -1 && endIdx > startIdx)
                 {
-                    content = content.Substring(jsonStartIndex, jsonEndIndex - jsonStartIndex + 1);
-                    
-                    var data = JsonDocument.Parse(content);
+                    jsonContent = content.Substring(startIdx, endIdx - startIdx + 1);
+                }
+
+                try 
+                {
+                    using var data = JsonDocument.Parse(jsonContent);
                     var root = data.RootElement;
 
                     // Cache for current request to avoid redundant queries
                     var gameCache = new Dictionary<string, Game>();
                     var serverCache = new Dictionary<string, Server>();
                     var guildCache = new Dictionary<string, Guild>();
-                    var playerCache = new Dictionary<string, Player>();
 
+                    // 1. Extract Game Name
                     Game? targetGame = null;
-                    if (root.TryGetProperty("game_name", out var gameNameElem) && gameNameElem.ValueKind != JsonValueKind.Null)
+                    string? gn = null;
+                    if (root.TryGetProperty("game_name", out var gElem) && gElem.ValueKind == JsonValueKind.String) gn = gElem.GetString();
+                    
+                    if (!string.IsNullOrEmpty(gn))
                     {
-                        var gn = gameNameElem.GetString();
-                        if (!string.IsNullOrEmpty(gn))
+                        targetGame = await _context.Games.FirstOrDefaultAsync(g => g.Gamename == gn);
+                        if (targetGame == null)
                         {
-                            if (!gameCache.TryGetValue(gn, out targetGame))
-                            {
-                                targetGame = await _context.Games.FirstOrDefaultAsync(g => g.Gamename == gn);
-                                if (targetGame == null)
-                                {
-                                    var normalizedGn = StringNormalizationHelper.Normalize(gn);
-                                    var allGames = await _context.Games.ToListAsync();
-                                    targetGame = allGames.FirstOrDefault(g => StringNormalizationHelper.Normalize(g.Gamename) == normalizedGn);
-                                }
-                                if (targetGame == null)
-                                {
-                                    targetGame = new Game { Gamename = gn };
-                                    _context.Games.Add(targetGame);
-                                }
-                                gameCache[gn] = targetGame;
-                            }
-
-                            _context.Aiextractedfields.Add(new Aiextractedfield
-                            {
-                                Analysisid = analysis.Analysisid,
-                                Rawtext = gn.Length > 500 ? string.Concat(gn.AsSpan(0, 497), "...") : gn,
-                                Fieldtype = "GameName",
-                                Confidence = 0.98
-                            });
+                            targetGame = new Game { Gamename = gn };
+                            _context.Games.Add(targetGame);
+                            await _context.SaveChangesAsync();
                         }
+                        gameCache[gn] = targetGame;
+
+                        _context.Aiextractedfields.Add(new Aiextractedfield { Analysisid = analysis.Analysisid, Rawtext = gn, Fieldtype = "GameName", Confidence = 0.99 });
                     }
 
-                    // Find or create Server
+                    // 2. Extract Server Name
                     Server? targetServer = null;
-                    if (root.TryGetProperty("server_name", out var serverNameElem) && serverNameElem.ValueKind != JsonValueKind.Null)
+                    string? sn = null;
+                    if (root.TryGetProperty("server_name", out var sElem) && sElem.ValueKind == JsonValueKind.String) sn = sElem.GetString();
+
+                    if (!string.IsNullOrEmpty(sn))
                     {
-                        var sn = serverNameElem.GetString();
-                        if (!string.IsNullOrEmpty(sn))
+                        targetServer = await _context.Servers.FirstOrDefaultAsync(s => s.Servername == sn && (targetGame == null || s.Gameid == targetGame.Gameid));
+                        if (targetServer == null)
                         {
-                            if (!serverCache.TryGetValue(sn, out targetServer))
-                            {
-                                if (targetGame != null)
-                                {
-                                    targetServer = await _context.Servers.FirstOrDefaultAsync(s => s.Servername == sn && s.Gameid == targetGame.Gameid);
-                                    if (targetServer == null)
-                                    {
-                                        var normalizedSn = StringNormalizationHelper.Normalize(sn);
-                                        var serversInGame = await _context.Servers.Where(s => s.Gameid == targetGame.Gameid).ToListAsync();
-                                        targetServer = serversInGame.FirstOrDefault(s => StringNormalizationHelper.Normalize(s.Servername) == normalizedSn);
-                                    }
-                                }
-
-                                if (targetServer == null)
-                                {
-                                    targetServer = new Server { Servername = sn, Game = targetGame };
-                                    _context.Servers.Add(targetServer);
-                                }
-                                serverCache[sn] = targetServer;
-                            }
-
-                            _context.Aiextractedfields.Add(new Aiextractedfield
-                            {
-                                Analysisid = analysis.Analysisid,
-                                Rawtext = sn.Length > 500 ? string.Concat(sn.AsSpan(0, 497), "...") : sn,
-                                Fieldtype = "ServerName",
-                                Confidence = 0.95
-                            });
+                            targetServer = new Server { Servername = sn, Game = targetGame };
+                            _context.Servers.Add(targetServer);
+                            await _context.SaveChangesAsync();
                         }
+                        serverCache[sn] = targetServer;
+
+                        _context.Aiextractedfields.Add(new Aiextractedfield { Analysisid = analysis.Analysisid, Rawtext = sn, Fieldtype = "ServerName", Confidence = 0.95 });
                     }
 
-                    // Find or create Event (Step 11: AddRange(AIExtractedFields))
+                    // 3. Extract Event Name
                     Event? targetEvent = null;
+                    string? en = null;
                     if (eventId.HasValue)
                     {
                         targetEvent = await _context.Events.Include(e => e.Game).FirstOrDefaultAsync(e => e.Eventid == eventId.Value);
                         if (targetEvent != null && targetGame == null) targetGame = targetEvent.Game;
                     }
-
-                    if (targetEvent == null && root.TryGetProperty("event_name", out var eventNameElem) && eventNameElem.ValueKind != JsonValueKind.Null)
+                    else if (root.TryGetProperty("event_name", out var eElem) && eElem.ValueKind == JsonValueKind.String)
                     {
-                        var en = eventNameElem.GetString();
-                        if (!string.IsNullOrEmpty(en))
-                        {
-                            if (targetGame != null)
-                            {
-                                targetEvent = await _context.Events.FirstOrDefaultAsync(e => e.Eventname == en && e.Gameid == targetGame.Gameid);
-                                if (targetEvent == null)
-                                {
-                                    var normalizedEn = StringNormalizationHelper.Normalize(en);
-                                    var eventsInGame = await _context.Events.Where(e => e.Gameid == targetGame.Gameid).ToListAsync();
-                                    targetEvent = eventsInGame.FirstOrDefault(e => StringNormalizationHelper.Normalize(e.Eventname) == normalizedEn);
-                                }
-                            }
-
-                            if (targetEvent == null)
-                            {
-                                targetEvent = new Event { Eventname = en, Game = targetGame, Startdate = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified) };
-                                _context.Events.Add(targetEvent);
-                            }
-
-                            _context.Aiextractedfields.Add(new Aiextractedfield
-                            {
-                                Analysisid = analysis.Analysisid,
-                                Rawtext = en.Length > 500 ? string.Concat(en.AsSpan(0, 497), "...") : en,
-                                Fieldtype = "EventName",
-                                Confidence = 0.95
-                            });
-                        }
+                        en = eElem.GetString();
                     }
 
-                    // Create Leaderboard
+                    if (targetEvent == null && !string.IsNullOrEmpty(en))
+                    {
+                        targetEvent = await _context.Events.FirstOrDefaultAsync(e => e.Eventname == en && (targetGame == null || e.Gameid == targetGame.Gameid));
+                        if (targetEvent == null)
+                        {
+                            targetEvent = new Event { Eventname = en, Game = targetGame, Startdate = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified) };
+                            _context.Events.Add(targetEvent);
+                            await _context.SaveChangesAsync();
+                        }
+
+                        _context.Aiextractedfields.Add(new Aiextractedfield { Analysisid = analysis.Analysisid, Rawtext = en, Fieldtype = "EventName", Confidence = 0.95 });
+                    }
+
+                    // 4. Create Leaderboard
                     var lb = new Leaderboard
                     {
-                        Title = $"Leaderboard from Analysis #{analysis.Analysisid}",
+                        Title = $"Bảng xếp hạng {en ?? targetEvent?.Eventname ?? "mới"}",
                         Createdfromanalysisid = analysis.Analysisid,
                         Metrictype = "Score",
                         Event = targetEvent
                     };
                     _context.Leaderboards.Add(lb);
-
-                    if (root.TryGetProperty("leaderboard", out var leaderboard) && leaderboard.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (var item in leaderboard.EnumerateArray())
-                        {
-                            int rank = 0;
-                            if (item.TryGetProperty("rank", out var rElem) && rElem.ValueKind != JsonValueKind.Null)
-                            {
-                                if (rElem.ValueKind == JsonValueKind.Number) rElem.TryGetInt32(out rank);
-                                else if (rElem.ValueKind == JsonValueKind.String && int.TryParse(rElem.GetString(), out var rStr)) rank = rStr;
-                            }
-
-                            string pName = "Unknown";
-                            if (item.TryGetProperty("player_name", out var pElem) && pElem.ValueKind != JsonValueKind.Null)
-                            {
-                                pName = pElem.GetString() ?? "Unknown";
-                            }
-
-                            double score = 0;
-                            if (item.TryGetProperty("score", out var sElem) && sElem.ValueKind != JsonValueKind.Null)
-                            {
-                                if (sElem.ValueKind == JsonValueKind.Number) sElem.TryGetDouble(out score);
-                                else if (sElem.ValueKind == JsonValueKind.String && double.TryParse(sElem.GetString(), out var sStr)) score = sStr;
-                            }
-
-                            // Optional Server/Guild per player
-                            Server? playerServer = targetServer;
-                            if (item.TryGetProperty("server_name", out var pSnElem) && pSnElem.ValueKind != JsonValueKind.Null && targetGame != null)
-                            {
-                                var psn = pSnElem.GetString();
-                                if (!string.IsNullOrEmpty(psn))
-                                {
-                                    if (!serverCache.TryGetValue(psn, out playerServer))
-                                    {
-                                        playerServer = await _context.Servers.FirstOrDefaultAsync(s => s.Servername == psn && s.Gameid == targetGame.Gameid);
-                                        if (playerServer == null)
-                                        {
-                                            var normalizedPsn = StringNormalizationHelper.Normalize(psn);
-                                            var serversInGame = await _context.Servers.Where(s => s.Gameid == targetGame.Gameid).ToListAsync();
-                                            playerServer = serversInGame.FirstOrDefault(s => StringNormalizationHelper.Normalize(s.Servername) == normalizedPsn);
-                                        }
-                                        if (playerServer == null)
-                                        {
-                                            playerServer = new Server { Servername = psn, Game = targetGame };
-                                            _context.Servers.Add(playerServer);
-                                        }
-                                        serverCache[psn] = playerServer;
-                                    }
-                                }
-                            }
-
-                            Guild? playerGuild = null;
-                            var guildNameProperty = item.TryGetProperty("guild_name", out var gElem) ? gElem 
-                                                    : root.TryGetProperty("guild_name", out var globalGuildElem) ? globalGuildElem 
-                                                    : (JsonElement?)null;
-
-                            if (guildNameProperty.HasValue && guildNameProperty.Value.ValueKind != JsonValueKind.Null && playerServer != null)
-                            {
-                                var gn = guildNameProperty.Value.GetString();
-                                if (!string.IsNullOrEmpty(gn))
-                                {
-                                    if (!guildCache.TryGetValue(gn, out playerGuild))
-                                    {
-                                        playerGuild = await _context.Guilds.FirstOrDefaultAsync(g => g.Guildname == gn && g.Serverid == playerServer.Serverid);
-                                        if (playerGuild == null)
-                                        {
-                                            var normalizedGn = StringNormalizationHelper.Normalize(gn);
-                                            var guildsInServer = await _context.Guilds.Where(g => g.Serverid == playerServer.Serverid).ToListAsync();
-                                            playerGuild = guildsInServer.FirstOrDefault(g => StringNormalizationHelper.Normalize(g.Guildname) == normalizedGn);
-                                        }
-                                        if (playerGuild == null)
-                                        {
-                                            playerGuild = new Guild { Guildname = gn, Server = playerServer };
-                                            _context.Guilds.Add(playerGuild);
-                                        }
-                                        guildCache[gn] = playerGuild;
-                                    }
-                                }
-                            }
-                            
-                            // Find or create player
-                            Player? player = null;
-                            if (!string.IsNullOrEmpty(pName) && pName != "Unknown" && targetGame != null)
-                            {
-                                if (!playerCache.TryGetValue(pName, out player))
-                                {
-                                    player = await _context.Players.FirstOrDefaultAsync(p => p.Playername == pName && p.Gameid == targetGame.Gameid);
-                                    if (player == null)
-                                    {
-                                        var normalizedPName = StringNormalizationHelper.Normalize(pName);
-                                        var playersInGame = await _context.Players.Where(p => p.Gameid == targetGame.Gameid).ToListAsync();
-                                        player = playersInGame.FirstOrDefault(p => StringNormalizationHelper.Normalize(p.Playername) == normalizedPName);
-                                    }
-                                    if (player == null)
-                                    {
-                                        player = new Player 
-                                        { 
-                                            Playername = pName,
-                                            Game = targetGame,
-                                            Server = playerServer,
-                                            Guild = playerGuild
-                                        };
-                                        _context.Players.Add(player);
-                                    }
-                                    else 
-                                    {
-                                        // Update player's server/guild if they are now known
-                                        if (player.Serverid == null && playerServer != null) player.Server = playerServer;
-                                        if (player.Guildid == null && playerGuild != null) player.Guild = playerGuild;
-                                    }
-                                    playerCache[pName] = player;
-                                }
-                            }
-
-                            // Save as extracted field for history
-                            var playerInfo = $"Rank: {rank}, Player: {pName}, Score: {score}";
-                            _context.Aiextractedfields.Add(new Aiextractedfield
-                            {
-                                Analysisid = analysis.Analysisid,
-                                Rawtext = playerInfo.Length > 500 ? string.Concat(playerInfo.AsSpan(0, 497), "...") : playerInfo,
-                                Fieldtype = "LeaderboardRow",
-                                Confidence = 0.95
-                            });
-
-                            // Save to LeaderboardEntry
-                            if (player != null)
-                            {
-                                _context.Leaderboardentries.Add(new Leaderboardentry
-                                {
-                                    Leaderboard = lb,
-                                    Player = player,
-                                    Rank = rank,
-                                    Value = score
-                                });
-                            }
-                        }
-                    }
-                    
-                    // Final save for all entities in the try block
                     await _context.SaveChangesAsync();
 
-                    // Step 12-13: Success
+                    // 5. Process Leaderboard Entries
+                    if (root.TryGetProperty("leaderboard", out var lbArray) && lbArray.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var item in lbArray.EnumerateArray())
+                        {
+                            // Extract basic info
+                            int rank = 0;
+                            if (item.TryGetProperty("rank", out var rE)) { if (rE.ValueKind == JsonValueKind.Number) rE.TryGetInt32(out rank); else if (int.TryParse(rE.GetString() ?? "0", out var rS)) rank = rS; }
+                            
+                            string? pName = null;
+                            if (item.TryGetProperty("player_name", out var pE)) pName = pE.GetString();
+                            
+                            double score = 0;
+                            if (item.TryGetProperty("score", out var scE)) { if (scE.ValueKind == JsonValueKind.Number) scE.TryGetDouble(out score); else if (double.TryParse(scE.GetString() ?? "0", out var scS)) score = scS; }
+                            
+                            string? guildName = null;
+                            if (item.TryGetProperty("guild_name", out var gNE)) guildName = gNE.GetString();
+
+                            if (string.IsNullOrEmpty(pName)) continue;
+
+                            // Find or Create Guild
+                            Guild? playerGuild = null;
+                            if (!string.IsNullOrEmpty(guildName))
+                            {
+                                if (!guildCache.TryGetValue(guildName, out playerGuild))
+                                {
+                                    playerGuild = await _context.Guilds.FirstOrDefaultAsync(g => g.Guildname == guildName && (targetServer == null || g.Serverid == targetServer.Serverid));
+                                    if (playerGuild == null)
+                                    {
+                                        playerGuild = new Guild { Guildname = guildName, Server = targetServer };
+                                        _context.Guilds.Add(playerGuild);
+                                        await _context.SaveChangesAsync();
+                                    }
+                                    guildCache[guildName] = playerGuild;
+                                }
+                            }
+
+                            // Find or Create Player
+                            var player = await _context.Players.FirstOrDefaultAsync(p => p.Playername == pName && (targetGame == null || p.Gameid == targetGame.Gameid));
+                            if (player == null)
+                            {
+                                player = new Player { Playername = pName, Game = targetGame, Server = targetServer, Guild = playerGuild };
+                                _context.Players.Add(player);
+                                await _context.SaveChangesAsync();
+                            }
+                            else 
+                            {
+                                if (player.Guildid == null && playerGuild != null) player.Guildid = playerGuild.Guildid;
+                                if (player.Serverid == null && targetServer != null) player.Serverid = targetServer.Serverid;
+                            }
+
+                            // Add Entry
+                            _context.Leaderboardentries.Add(new Leaderboardentry
+                            {
+                                Leaderboardid = lb.Leaderboardid,
+                                Playerid = player.Playerid,
+                                Rank = rank,
+                                Value = score
+                            });
+                        }
+                    }
+
+                    await _context.SaveChangesAsync();
                     upload.Status = "Success";
                     await _context.SaveChangesAsync();
                 }
-                else 
+                catch (Exception jsonEx)
                 {
-                    // Fallback if no JSON found - treat as partial failure or success depending on requirement
-                    // Here we'll treat as Success but with OCR fallback
-                    foreach (var t in ocr.Texts)
-                    {
-                        var rawText = t.Text;
-                        if (rawText.Length > 500)
-                        {
-                            rawText = string.Concat(rawText.AsSpan(0, 497), "...");
-                        }
-
-                        _context.Aiextractedfields.Add(new Aiextractedfield
-                        {
-                            Analysisid = analysis.Analysisid,
-                            Rawtext = rawText,
-                            Fieldtype = "OCR",
-                            Confidence = t.Confidence
-                        });
-                    }
-                    await _context.SaveChangesAsync();
-
-                    upload.Status = "Success";
-                    await _context.SaveChangesAsync();
+                    Console.WriteLine($"JSON Parse Error: {jsonEx.Message}. Content: {jsonContent}");
+                    throw new Exception($"Failed to parse AI result: {jsonEx.Message}");
                 }
             }
             catch (Exception ex)
