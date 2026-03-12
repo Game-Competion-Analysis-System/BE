@@ -13,9 +13,9 @@ namespace BIL.Service
 {
     public class AIAnalysisService(IAIAnalysisRepository repo) : IAIAnalysisService
     {
-        public async Task<AnalysisResultDto?> AnalyzeScreenshotAsync(IFormFile file, int userId)
+        public async Task<AnalysisResultDto?> AnalyzeScreenshotAsync(IFormFile file, int userId, int? eventId = null)
         {
-            var analysis = await repo.ProcessScreenshotAsync(file, userId);
+            var analysis = await repo.ProcessScreenshotAsync(file, userId, eventId);
             if (analysis == null) return null;
             return await GetAnalysisResultAsync(analysis.Analysisid);
         }

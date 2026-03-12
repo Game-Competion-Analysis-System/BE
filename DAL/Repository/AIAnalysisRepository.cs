@@ -1,3 +1,5 @@
+using CloudinaryDotNet;
+using CloudinaryDotNet.Actions;
 using DAL.DTO;
 using DAL.Entities;
 using DAL.Helper;
@@ -10,42 +12,73 @@ using System.Text.Json;
 
 namespace DAL.Repository
 {
-    public class AIAnalysisRepository(Swd392GameAiContext context, HttpClient http, IConfiguration config) : IAIAnalysisRepository
+    public class AIAnalysisRepository : IAIAnalysisRepository
     {
-        private readonly Swd392GameAiContext _context = context;
-        private readonly HttpClient _http = http;
-        private readonly IConfiguration _config = config;
+        private readonly Swd392GameAiContext _context;
+        private readonly HttpClient _http;
+        private readonly IConfiguration _config;
+        private readonly Cloudinary _cloudinary;
         private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
-        public async Task<Aianalysis> ProcessScreenshotAsync(IFormFile file, int userId)
+        public AIAnalysisRepository(Swd392GameAiContext context, HttpClient http, IConfiguration config)
         {
-            var ocr = await CallGroqOcr(file);
+            _context = context;
+            _http = http;
+            _config = config;
 
-            var upload = new  Imageupload
+            var acc = new Account(
+                _config["Cloudinary:CloudName"],
+                _config["Cloudinary:ApiKey"],
+                _config["Cloudinary:ApiSecret"]
+            );
+            _cloudinary = new Cloudinary(acc);
+        }
+
+        public async Task<Aianalysis> ProcessScreenshotAsync(IFormFile file, int userId, int? eventId = null)
+        {
+            // 1. Upload to Cloudinary (Step 3-4)
+            var uploadParams = new ImageUploadParams()
+            {
+                File = new FileDescription(file.FileName, file.OpenReadStream()),
+                Folder = "game-analysis"
+            };
+            var uploadResult = await _cloudinary.UploadAsync(uploadParams);
+            
+            if (uploadResult.Error != null)
+                throw new Exception($"Cloudinary upload failed: {uploadResult.Error.Message}");
+
+            var imageUrl = uploadResult.SecureUrl.ToString();
+
+            // 2. Add ImageUpload with Status = "Pending" (Step 5)
+            var upload = new Imageupload
             {
                 Userid = userId,
-                Imageurl = file.FileName,
+                Eventid = eventId,
+                Imageurl = imageUrl,
                 Uploadtime = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified),
-                Status = "Processed"
+                Status = "Pending"
             };
-
             _context.Imageuploads.Add(upload);
-            await _context.SaveChangesAsync();
+            await _context.SaveChangesAsync(); // Step 6
 
-            var analysis = new Aianalysis
-            {
-                Uploadid = upload.Uploadid,
-                Aimodelversion = "meta-llama/llama-4-scout-17b-16e-instruct",
-                Confidencescore = ocr.Confidence,
-                Processedtime = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified)
-            };
-
-            _context.Aianalyses.Add(analysis);
-            await _context.SaveChangesAsync();
-
-            // Try to parse structured content if available
+            Aianalysis? analysis = null;
             try 
             {
+                // 3. Call AI OCR (Step 7-9)
+                var ocr = await CallGroqOcr(file);
+
+                // 4. Add AIAnalysis (Step 10)
+                analysis = new Aianalysis
+                {
+                    Uploadid = upload.Uploadid,
+                    Aimodelversion = "meta-llama/llama-4-scout-17b-16e-instruct",
+                    Confidencescore = ocr.Confidence,
+                    Processedtime = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified)
+                };
+                _context.Aianalyses.Add(analysis);
+                await _context.SaveChangesAsync();
+
+                // 5. Try to parse structured content if available
                 var content = ocr.Choices?.FirstOrDefault()?.Message?.Content;
                 if (string.IsNullOrEmpty(content))
                 {
@@ -104,20 +137,24 @@ namespace DAL.Repository
 
                     // Find or create Server
                     Server? targetServer = null;
-                    if (root.TryGetProperty("server_name", out var serverNameElem) && serverNameElem.ValueKind != JsonValueKind.Null && targetGame != null)
+                    if (root.TryGetProperty("server_name", out var serverNameElem) && serverNameElem.ValueKind != JsonValueKind.Null)
                     {
                         var sn = serverNameElem.GetString();
                         if (!string.IsNullOrEmpty(sn))
                         {
                             if (!serverCache.TryGetValue(sn, out targetServer))
                             {
-                                targetServer = await _context.Servers.FirstOrDefaultAsync(s => s.Servername == sn && s.Gameid == targetGame.Gameid);
-                                if (targetServer == null)
+                                if (targetGame != null)
                                 {
-                                    var normalizedSn = StringNormalizationHelper.Normalize(sn);
-                                    var serversInGame = await _context.Servers.Where(s => s.Gameid == targetGame.Gameid).ToListAsync();
-                                    targetServer = serversInGame.FirstOrDefault(s => StringNormalizationHelper.Normalize(s.Servername) == normalizedSn);
+                                    targetServer = await _context.Servers.FirstOrDefaultAsync(s => s.Servername == sn && s.Gameid == targetGame.Gameid);
+                                    if (targetServer == null)
+                                    {
+                                        var normalizedSn = StringNormalizationHelper.Normalize(sn);
+                                        var serversInGame = await _context.Servers.Where(s => s.Gameid == targetGame.Gameid).ToListAsync();
+                                        targetServer = serversInGame.FirstOrDefault(s => StringNormalizationHelper.Normalize(s.Servername) == normalizedSn);
+                                    }
                                 }
+
                                 if (targetServer == null)
                                 {
                                     targetServer = new Server { Servername = sn, Game = targetGame };
@@ -136,20 +173,30 @@ namespace DAL.Repository
                         }
                     }
 
-                    // Find or create Event
+                    // Find or create Event (Step 11: AddRange(AIExtractedFields))
                     Event? targetEvent = null;
-                    if (root.TryGetProperty("event_name", out var eventNameElem) && eventNameElem.ValueKind != JsonValueKind.Null && targetGame != null)
+                    if (eventId.HasValue)
+                    {
+                        targetEvent = await _context.Events.Include(e => e.Game).FirstOrDefaultAsync(e => e.Eventid == eventId.Value);
+                        if (targetEvent != null && targetGame == null) targetGame = targetEvent.Game;
+                    }
+
+                    if (targetEvent == null && root.TryGetProperty("event_name", out var eventNameElem) && eventNameElem.ValueKind != JsonValueKind.Null)
                     {
                         var en = eventNameElem.GetString();
                         if (!string.IsNullOrEmpty(en))
                         {
-                            targetEvent = await _context.Events.FirstOrDefaultAsync(e => e.Eventname == en && e.Gameid == targetGame.Gameid);
-                            if (targetEvent == null)
+                            if (targetGame != null)
                             {
-                                var normalizedEn = StringNormalizationHelper.Normalize(en);
-                                var eventsInGame = await _context.Events.Where(e => e.Gameid == targetGame.Gameid).ToListAsync();
-                                targetEvent = eventsInGame.FirstOrDefault(e => StringNormalizationHelper.Normalize(e.Eventname) == normalizedEn);
+                                targetEvent = await _context.Events.FirstOrDefaultAsync(e => e.Eventname == en && e.Gameid == targetGame.Gameid);
+                                if (targetEvent == null)
+                                {
+                                    var normalizedEn = StringNormalizationHelper.Normalize(en);
+                                    var eventsInGame = await _context.Events.Where(e => e.Gameid == targetGame.Gameid).ToListAsync();
+                                    targetEvent = eventsInGame.FirstOrDefault(e => StringNormalizationHelper.Normalize(e.Eventname) == normalizedEn);
+                                }
                             }
+
                             if (targetEvent == null)
                             {
                                 targetEvent = new Event { Eventname = en, Game = targetGame, Startdate = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified) };
@@ -315,10 +362,15 @@ namespace DAL.Repository
                     
                     // Final save for all entities in the try block
                     await _context.SaveChangesAsync();
+
+                    // Step 12-13: Success
+                    upload.Status = "Success";
+                    await _context.SaveChangesAsync();
                 }
                 else 
                 {
-                    // Fallback if no JSON found
+                    // Fallback if no JSON found - treat as partial failure or success depending on requirement
+                    // Here we'll treat as Success but with OCR fallback
                     foreach (var t in ocr.Texts)
                     {
                         var rawText = t.Text;
@@ -336,31 +388,23 @@ namespace DAL.Repository
                         });
                     }
                     await _context.SaveChangesAsync();
+
+                    upload.Status = "Success";
+                    await _context.SaveChangesAsync();
                 }
             }
             catch (Exception ex)
             {
+                // Step 15-16: Failed
+                if (upload != null)
+                {
+                    upload.Status = "Failed";
+                    await _context.SaveChangesAsync();
+                }
+
                 // Log the error for debugging
                 Console.WriteLine($"Error processing AI result: {ex.Message}");
-
-                // Fallback to original logic if parsing fails
-                foreach (var t in ocr.Texts)
-                {
-                    var rawText = t.Text;
-                    if (rawText.Length > 500)
-                    {
-                        rawText = string.Concat(rawText.AsSpan(0, 497), "...");
-                    }
-
-                    _context.Aiextractedfields.Add(new Aiextractedfield
-                    {
-                        Analysisid = analysis.Analysisid,
-                        Rawtext = rawText,
-                        Fieldtype = "OCR",
-                        Confidence = t.Confidence
-                    });
-                }
-                await _context.SaveChangesAsync();
+                throw; // Step 17: Rethrow to let Controller return 400 Bad Request
             }
 
             return analysis;
@@ -456,23 +500,19 @@ namespace DAL.Repository
 
             var base64Image = Convert.ToBase64String(ms.ToArray());
 
-            var promptText = "Extract game name, server name, guild name, event name, player names, ranks, and scores from this leaderboard screenshot. " +
-                "IMPORTANT: Look for the column labeled 'Bang Hội' or 'Guild' and extract the guild name for each player entry. " +
-                "Return as JSON with structure: { 'game_name': '...', 'server_name': '...', 'guild_name': '...', 'event_name': '...', " +
-                "'leaderboard': [ { 'rank': 1, 'player_name': '...', 'score': 100, 'guild_name': '...', 'server_name': '...' } ] }. " +
-                "If a player has a guild name (like 'ĐẠI-VIỆT' or 'TAE_TụNghĩa' in the image), make sure to include it in their entry. " +
-                "Note: In Vietnamese game UI, 'Hạng' is rank, 'Tên' is player name, 'Bang Hội' is guild name, 'Lực Chiến' or 'Điểm' is score.";
+            var promptText = "Phân tích ảnh chụp màn hình bảng xếp hạng game này. " +
+                "Trích xuất thông tin: Tên Game (Game Name), Tên Máy Chủ (Server Name), Tên Sự Kiện (Event Name), Tên Bang Hội (Guild Name). " +
+                "Đối với danh sách bảng xếp hạng, trích xuất: Hạng (Rank), Tên Người Chơi (Player Name), Điểm Số/Lực Chiến (Score), Bang Hội (Guild Name). " +
+                "QUAN TRỌNG: Trả về JSON chuẩn với cấu trúc: " +
+                "{ 'game_name': '...', 'server_name': '...', 'event_name': '...', 'leaderboard': [ { 'rank': 1, 'player_name': '...', 'score': 100, 'guild_name': '...' } ] }. " +
+                "Nếu không thấy thông tin nào, hãy để null. Nếu thấy 'Bang Hội' (Guild) cho từng người chơi, hãy trích xuất chính xác. " +
+                "Ví dụ tên bang hội: 'ĐẠI-VIỆT', 'TAE_TụNghĩa'.";
 
             var requestBody = new
             {
                 model = "meta-llama/llama-4-scout-17b-16e-instruct", 
                 messages = (object[])
                 [
-                    new
-                    {
-                        role = "system",
-                        content = (object)"You are an expert game data analyzer. Extract structured information from game leaderboard screenshots. Respond only with a JSON object."
-                    },
                     new
                     {
                         role = "user",
@@ -484,12 +524,14 @@ namespace DAL.Repository
                                 type = "image_url",
                                 image_url = new
                                 {
-                                    url = $"data:image/png;base64,{base64Image}"
+                                    url = $"data:image/jpeg;base64,{base64Image}"
                                 }
                             }
                         }
                     }
-                ]
+                ],
+                temperature = 0.1,
+                response_format = new { type = "json_object" }
             };
 
             _http.DefaultRequestHeaders.Clear();

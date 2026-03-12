@@ -13,14 +13,21 @@ namespace GameCompetionAnalysisSystem.Controllers
     {
         [HttpPost("analyze")]
         [Consumes("multipart/form-data")]
-        public async Task<IActionResult> Analyze(IFormFile file)
+        public async Task<IActionResult> Analyze(IFormFile file, [FromForm] int? eventId)
         {
             var userIdStr = User.FindFirst("UserId")?.Value;
             if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out int userId))
                 return Unauthorized();
 
-            var result = await service.AnalyzeScreenshotAsync(file, userId);
-            return Ok(result);
+            try
+            {
+                var result = await service.AnalyzeScreenshotAsync(file, userId, eventId);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         [HttpGet]

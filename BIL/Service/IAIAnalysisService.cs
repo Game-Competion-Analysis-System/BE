@@ -8,7 +8,7 @@ namespace BIL.Service
 {
     public interface IAIAnalysisService
     {
-        Task<AnalysisResultDto?> AnalyzeScreenshotAsync(IFormFile file, int userId);
+        Task<AnalysisResultDto?> AnalyzeScreenshotAsync(IFormFile file, int userId, int? eventId = null);
         Task<List<AnalysisResultDto>> GetHistoryAsync(int userId, string? role);
         Task<Aianalysis?> GetByIdAsync(int id);
         Task<AnalysisResultDto?> GetAnalysisResultAsync(int id);
