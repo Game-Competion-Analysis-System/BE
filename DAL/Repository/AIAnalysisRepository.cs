@@ -12,32 +12,22 @@ using System.Text.Json;
 
 namespace DAL.Repository
 {
-    public class AIAnalysisRepository : IAIAnalysisRepository
+    public class AIAnalysisRepository(Swd392GameAiContext context, HttpClient http, IConfiguration config) : IAIAnalysisRepository
     {
-        private readonly Swd392GameAiContext _context;
-        private readonly HttpClient _http;
-        private readonly IConfiguration _config;
-        private readonly Cloudinary _cloudinary;
+        private readonly Swd392GameAiContext _context = context;
+        private readonly HttpClient _http = http;
+        private readonly IConfiguration _config = config;
+        private readonly Cloudinary _cloudinary = new(new Account(
+                config["Cloudinary:CloudName"],
+                config["Cloudinary:ApiKey"],
+                config["Cloudinary:ApiSecret"]
+            ));
         private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
-
-        public AIAnalysisRepository(Swd392GameAiContext context, HttpClient http, IConfiguration config)
-        {
-            _context = context;
-            _http = http;
-            _config = config;
-
-            var acc = new Account(
-                _config["Cloudinary:CloudName"],
-                _config["Cloudinary:ApiKey"],
-                _config["Cloudinary:ApiSecret"]
-            );
-            _cloudinary = new Cloudinary(acc);
-        }
 
         public async Task<Aianalysis> ProcessScreenshotAsync(IFormFile file, int userId, int? eventId = null)
         {
             // 1. Upload to Cloudinary (Step 3-4)
-            var uploadParams = new ImageUploadParams()
+            var uploadParams = new ImageUploadParams
             {
                 File = new FileDescription(file.FileName, file.OpenReadStream()),
                 Folder = "game-analysis"
@@ -47,8 +37,38 @@ namespace DAL.Repository
             if (uploadResult.Error != null)
                 throw new Exception($"Cloudinary upload failed: {uploadResult.Error.Message}");
 
-            var imageUrl = uploadResult.SecureUrl.ToString();
+            var imageUrl = uploadResult.SecureUrl?.ToString() ?? throw new Exception("Cloudinary upload failed: No URL returned");
+            return await ExecuteAnalysisFlow(imageUrl, userId, eventId);
+        }
 
+        public async Task<Aianalysis?> ProcessLatestImageFromCloudAsync(int userId)
+        {
+            // 1. Get latest image from Cloudinary folder
+            var listParams = new ListResourcesByPrefixParams
+            {
+                Type = "upload",
+                Prefix = "game-analysis/",
+                MaxResults = 1,
+                Direction = "desc"
+            };
+            
+            var resources = await _cloudinary.ListResourcesAsync(listParams);
+            var latest = resources.Resources?.FirstOrDefault();
+            
+            if (latest == null) return null;
+
+            var imageUrl = latest.SecureUrl?.ToString() ?? throw new Exception("Cloudinary resource missing SecureUrl");
+
+            // 2. Check if already processed (Deduplication)
+            var exists = await _context.Imageuploads.AnyAsync(i => i.Imageurl == imageUrl);
+            if (exists) return null;
+
+            // 3. Run analysis flow
+            return await ExecuteAnalysisFlow(imageUrl, userId, null);
+        }
+
+        private async Task<Aianalysis> ExecuteAnalysisFlow(string imageUrl, int userId, int? eventId)
+        {
             // 2. Add ImageUpload with Status = "Pending" (Step 5)
             var upload = new Imageupload
             {
@@ -65,7 +85,7 @@ namespace DAL.Repository
             try 
             {
                 // 3. Call AI OCR (Step 7-9)
-                var ocr = await CallGroqOcr(file);
+                var ocr = await CallGroqOcrWithUrl(imageUrl);
 
                 // 4. Add AIAnalysis (Step 10)
                 analysis = new Aianalysis
@@ -97,31 +117,33 @@ namespace DAL.Repository
 
                 try 
                 {
-                    using var data = JsonDocument.Parse(jsonContent);
+                    using var data = JsonDocument.Parse(jsonContent, new JsonDocumentOptions { AllowTrailingCommas = true });
                     var root = data.RootElement;
 
                     // Cache for current request to avoid redundant queries
-                    var gameCache = new Dictionary<string, Game>();
-                    var serverCache = new Dictionary<string, Server>();
-                    var guildCache = new Dictionary<string, Guild>();
+                    Dictionary<string, Game> gameCache = [];
+                    Dictionary<string, Server> serverCache = [];
+                    Dictionary<string, Guild> guildCache = [];
 
-                    // 1. Extract Game Name
+                    // 1. Extract Game Name (Strictly VLTK Mobile or VLTK 2.0)
                     Game? targetGame = null;
                     string? gn = null;
                     if (root.TryGetProperty("game_name", out var gElem) && gElem.ValueKind == JsonValueKind.String) gn = gElem.GetString();
                     
                     if (!string.IsNullOrEmpty(gn))
                     {
-                        targetGame = await _context.Games.FirstOrDefaultAsync(g => g.Gamename == gn);
-                        if (targetGame == null)
-                        {
-                            targetGame = new Game { Gamename = gn };
-                            _context.Games.Add(targetGame);
-                            await _context.SaveChangesAsync();
-                        }
-                        gameCache[gn] = targetGame;
+                        // Normalize AI output to match our system
+                        string normalizedGn = gn.ToLower();
+                        string targetName = normalizedGn.Contains("mobile") || normalizedGn.Contains("vltkm") ? "VLTK Mobile" : "VLTK 2.0";
 
-                        _context.Aiextractedfields.Add(new Aiextractedfield { Analysisid = analysis.Analysisid, Rawtext = gn, Fieldtype = "GameName", Confidence = 0.99 });
+                        targetGame = await _context.Games.FirstOrDefaultAsync(g => g.Gamename == targetName);
+                        
+                        // If not found in DB but it's one of our supported games, we can't do much but we definitely DON'T create "rác" games
+                        if (targetGame != null)
+                        {
+                            gameCache[targetName] = targetGame;
+                            _context.Aiextractedfields.Add(new Aiextractedfield { Analysisid = analysis.Analysisid, Rawtext = gn, Fieldtype = "GameName", Confidence = 0.99 });
+                        }
                     }
 
                     // 2. Extract Server Name
@@ -269,7 +291,61 @@ namespace DAL.Repository
             return analysis;
         }
 
-        public async Task<List<Aianalysis>> GetAllAsync(int? userId = null)
+        private async Task<MistralOcrResultDto> CallGroqOcrWithUrl(string imageUrl)
+        {
+            var apiKey = _config["Groq:ApiKey"] ?? throw new Exception("Missing Groq API Key");
+
+            var promptText = "Phân tích ảnh chụp màn hình bảng xếp hạng game này. " +
+                "QUAN TRỌNG: Hệ thống chỉ hỗ trợ 2 game là 'VLTK Mobile' và 'VLTK 2.0'. Hãy xác định xem ảnh thuộc game nào trong 2 game này. " +
+                "Trích xuất thông tin: Tên Game (chỉ được là 'VLTK Mobile' hoặc 'VLTK 2.0'), Tên Máy Chủ (Server Name), Tên Sự Kiện (Event Name). " +
+                "Đối với danh sách bảng xếp hạng, trích xuất: Hạng (Rank), Tên Người Chơi (Player Name), Điểm Số/Lực Chiến (Score), Bang Hội (Guild Name). " +
+                "QUAN TRỌNG: Trả về JSON chuẩn với cấu trúc: " +
+                "{ 'game_name': '...', 'server_name': '...', 'event_name': '...', 'leaderboard': [ { 'rank': 1, 'player_name': '...', 'score': 100, 'guild_name': '...' } ] }. " +
+                "Nếu không thấy thông tin nào, hãy để null. Nếu thấy 'Bang Hội' (Guild) cho từng người chơi, hãy trích xuất chính xác.";
+
+            var requestBody = new
+            {
+                model = "meta-llama/llama-4-scout-17b-16e-instruct", 
+                messages = new object[]
+                {
+                    new
+                    {
+                        role = "user",
+                        content = new object[]
+                        {
+                            new { type = "text", text = promptText },
+                            new
+                            {
+                                type = "image_url",
+                                image_url = new { url = imageUrl }
+                            }
+                        }
+                    }
+                },
+                temperature = 0.1,
+                response_format = new { type = "json_object" }
+            };
+
+            _http.DefaultRequestHeaders.Clear();
+            _http.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", apiKey);
+
+            var response = await _http.PostAsJsonAsync(
+                "https://api.groq.com/openai/v1/chat/completions",
+                requestBody
+            );
+
+            var raw = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+                throw new Exception(raw);
+            return JsonSerializer.Deserialize<MistralOcrResultDto>(
+                raw,
+                _jsonOptions
+            ) ?? throw new Exception("Failed to parse OCR result");
+        }
+
+        public async Task<(List<Aianalysis> Items, int TotalCount)> GetAllAsync(QueryParameters parameters, int? userId = null)
         {
             var query = _context.Aianalyses
                 .Include(a => a.Aiextractedfields)
@@ -278,10 +354,32 @@ namespace DAL.Repository
 
             if (userId.HasValue)
             {
-                query = query.Where(a => a.Upload.Userid == userId.Value);
+                query = query.Where(a => a.Upload != null && a.Upload.Userid == userId.Value);
             }
 
-            return await query.OrderByDescending(a => a.Processedtime).ToListAsync();
+            // Search (Search by AI model or extracted fields)
+            if (!string.IsNullOrEmpty(parameters.SearchTerm))
+            {
+                var search = parameters.SearchTerm.ToLower();
+                query = query.Where(a => 
+                    (a.Aimodelversion != null && a.Aimodelversion.ToLower().Contains(search)) ||
+                    a.Aiextractedfields.Any(f => f.Rawtext != null && f.Rawtext.ToLower().Contains(search)));
+            }
+
+            var totalCount = await query.CountAsync();
+
+            // Sorting
+            query = parameters.IsDescending 
+                ? query.OrderByDescending(a => a.Processedtime) 
+                : query.OrderBy(a => a.Processedtime);
+
+            // Paging
+            var items = await query
+                .Skip((parameters.PageNumber - 1) * parameters.PageSize)
+                .Take(parameters.PageSize)
+                .ToListAsync();
+
+            return (items, totalCount);
         }
 
         public async Task<Aianalysis?> GetByIdAsync(int id)
@@ -320,7 +418,7 @@ namespace DAL.Repository
             if (analysis == null) return false;
 
             // Delete Leaderboards and their entries
-            if (analysis.Leaderboards.Any())
+            if (analysis.Leaderboards.Count > 0)
             {
                 foreach (var lb in analysis.Leaderboards)
                 {
@@ -330,7 +428,7 @@ namespace DAL.Repository
             }
 
             // Delete Extracted Fields
-            if (analysis.Aiextractedfields.Any())
+            if (analysis.Aiextractedfields.Count > 0)
             {
                 _context.Aiextractedfields.RemoveRange(analysis.Aiextractedfields);
             }
@@ -360,35 +458,32 @@ namespace DAL.Repository
             var base64Image = Convert.ToBase64String(ms.ToArray());
 
             var promptText = "Phân tích ảnh chụp màn hình bảng xếp hạng game này. " +
-                "Trích xuất thông tin: Tên Game (Game Name), Tên Máy Chủ (Server Name), Tên Sự Kiện (Event Name), Tên Bang Hội (Guild Name). " +
+                "QUAN TRỌNG: Hệ thống chỉ hỗ trợ 2 game là 'VLTK Mobile' và 'VLTK 2.0'. Hãy xác định xem ảnh thuộc game nào trong 2 game này. " +
+                "Trích xuất thông tin: Tên Game (chỉ được là 'VLTK Mobile' hoặc 'VLTK 2.0'), Tên Máy Chủ (Server Name), Tên Sự Kiện (Event Name). " +
                 "Đối với danh sách bảng xếp hạng, trích xuất: Hạng (Rank), Tên Người Chơi (Player Name), Điểm Số/Lực Chiến (Score), Bang Hội (Guild Name). " +
                 "QUAN TRỌNG: Trả về JSON chuẩn với cấu trúc: " +
                 "{ 'game_name': '...', 'server_name': '...', 'event_name': '...', 'leaderboard': [ { 'rank': 1, 'player_name': '...', 'score': 100, 'guild_name': '...' } ] }. " +
-                "Nếu không thấy thông tin nào, hãy để null. Nếu thấy 'Bang Hội' (Guild) cho từng người chơi, hãy trích xuất chính xác. " +
-                "Ví dụ tên bang hội: 'ĐẠI-VIỆT', 'TAE_TụNghĩa'.";
+                "Nếu không thấy thông tin nào, hãy để null. Nếu thấy 'Bang Hội' (Guild) cho từng người chơi, hãy trích xuất chính xác.";
 
             var requestBody = new
             {
                 model = "meta-llama/llama-4-scout-17b-16e-instruct", 
-                messages = (object[])
-                [
+                messages = new object[]
+                {
                     new
                     {
                         role = "user",
-                        content = (object)new object[]
+                        content = new object[]
                         {
                             new { type = "text", text = promptText },
                             new
                             {
                                 type = "image_url",
-                                image_url = new
-                                {
-                                    url = $"data:image/jpeg;base64,{base64Image}"
-                                }
+                                image_url = new { url = $"data:image/jpeg;base64,{base64Image}" }
                             }
                         }
                     }
-                ],
+                },
                 temperature = 0.1,
                 response_format = new { type = "json_object" }
             };

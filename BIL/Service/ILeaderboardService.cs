@@ -1,3 +1,4 @@
+using DAL.DTO;
 using DAL.Entities;
 using System;
 using System.Collections.Generic;
@@ -11,7 +12,7 @@ namespace BIL.Service
     {
         Task ProcessOcrAsync(int analysisId);
         Task<List<Leaderboardentry>> GetTopAsync(int n);
-        Task<List<Leaderboard>> GetAllAsync();
+        Task<PagedResult<Leaderboard>> GetAllAsync(QueryParameters parameters);
         Task<Leaderboard?> GetByIdAsync(int id);
         Task<List<Leaderboardentry>> GetEntriesByLeaderboardIdAsync(int leaderboardId);
         Task<List<Leaderboardentry>> GetSortedEntriesByLeaderboardIdAsync(int leaderboardId);

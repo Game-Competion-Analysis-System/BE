@@ -6,7 +6,7 @@ namespace DAL.Repository
 {
     public interface IEventRepository
     {
-        List<Event> GetAll();
+        List<Event> GetAll(QueryParameters parameters, out int totalCount);
         Event? GetById(int id);
         List<Event> GetByGame(int gameId);
         List<Event> SearchByName(string name);

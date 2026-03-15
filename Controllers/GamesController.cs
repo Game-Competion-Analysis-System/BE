@@ -13,8 +13,7 @@ namespace GameCompetionAnalysisSystem.Controllers
     {
         [HttpGet]
         [AllowAnonymous]
-        public IActionResult GetList()
-            => Ok(service.GetAllGames());
+        public IActionResult GetList([FromQuery] QueryParameters parameters) => Ok(service.GetAllGames(parameters));
 
         [HttpGet("search")]
         [AllowAnonymous]

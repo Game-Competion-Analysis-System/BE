@@ -6,16 +6,59 @@ using System.Linq;
 
 namespace DAL.Repository
 {
-    public class EventRepository : IEventRepository
+    public class EventRepository(Swd392GameAiContext context) : IEventRepository
     {
-        private readonly Swd392GameAiContext _context;
+        private readonly Swd392GameAiContext _context = context;
 
-        public EventRepository(Swd392GameAiContext context)
+        public List<Event> GetAll(QueryParameters parameters, out int totalCount)
         {
-            _context = context;
-        }
+            var query = _context.Events.Include(e => e.Game).AsQueryable();
 
-        public List<Event> GetAll() => _context.Events.Include(e => e.Game).ToList();
+            // Search
+            if (!string.IsNullOrEmpty(parameters.SearchTerm))
+            {
+                var search = parameters.SearchTerm.ToLower();
+                query = query.Where(e => 
+                    (e.Eventname != null && e.Eventname.ToLower().Contains(search)) || 
+                    (e.Eventtype != null && e.Eventtype.ToLower().Contains(search)));
+            }
+
+            // Filtering
+            if (!string.IsNullOrEmpty(parameters.Filter))
+            {
+                var filter = parameters.Filter.ToLower();
+                query = query.Where(e => e.Eventtype != null && e.Eventtype.ToLower() == filter);
+            }
+
+            totalCount = query.Count();
+
+            // Sorting
+            if (!string.IsNullOrEmpty(parameters.SortBy))
+            {
+                switch (parameters.SortBy.ToLower())
+                {
+                    case "eventname":
+                        query = parameters.IsDescending ? query.OrderByDescending(e => e.Eventname) : query.OrderBy(e => e.Eventname);
+                        break;
+                    case "startdate":
+                        query = parameters.IsDescending ? query.OrderByDescending(e => e.Startdate) : query.OrderBy(e => e.Startdate);
+                        break;
+                    default:
+                        query = query.OrderBy(e => e.Eventid);
+                        break;
+                }
+            }
+            else
+            {
+                query = query.OrderBy(e => e.Eventid);
+            }
+
+            // Paging
+            return query
+                .Skip((parameters.PageNumber - 1) * parameters.PageSize)
+                .Take(parameters.PageSize)
+                .ToList();
+        }
 
         public Event? GetById(int id) => _context.Events.Include(e => e.Game).FirstOrDefault(e => e.Eventid == id);
 

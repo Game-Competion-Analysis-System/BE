@@ -1,3 +1,4 @@
+using DAL.DTO;
 using DAL.Entities;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
@@ -5,16 +6,56 @@ using System.Linq;
 
 namespace DAL.Repository
 {
-    public class ServerRepository : IServerRepository
+    public class ServerRepository(Swd392GameAiContext context) : IServerRepository
     {
-        private readonly Swd392GameAiContext _context;
+        private readonly Swd392GameAiContext _context = context;
 
-        public ServerRepository(Swd392GameAiContext context)
+        public List<Server> GetAll(QueryParameters parameters, out int totalCount)
         {
-            _context = context;
-        }
+            var query = _context.Servers.Include(s => s.Game).AsQueryable();
 
-        public List<Server> GetAll() => _context.Servers.Include(s => s.Game).ToList();
+            // Search
+            if (!string.IsNullOrEmpty(parameters.SearchTerm))
+            {
+                var search = parameters.SearchTerm.ToLower();
+                query = query.Where(s => 
+                    (s.Servername != null && s.Servername.ToLower().Contains(search)) || 
+                    (s.Region != null && s.Region.ToLower().Contains(search)));
+            }
+
+            // Filtering
+            if (!string.IsNullOrEmpty(parameters.Filter))
+            {
+                var filter = parameters.Filter.ToLower();
+                query = query.Where(s => s.Status != null && s.Status.ToLower() == filter);
+            }
+
+            totalCount = query.Count();
+
+            // Sorting
+            if (!string.IsNullOrEmpty(parameters.SortBy))
+            {
+                switch (parameters.SortBy.ToLower())
+                {
+                    case "servername":
+                        query = parameters.IsDescending ? query.OrderByDescending(s => s.Servername) : query.OrderBy(s => s.Servername);
+                        break;
+                    default:
+                        query = query.OrderBy(s => s.Serverid);
+                        break;
+                }
+            }
+            else
+            {
+                query = query.OrderBy(s => s.Serverid);
+            }
+
+            // Paging
+            return query
+                .Skip((parameters.PageNumber - 1) * parameters.PageSize)
+                .Take(parameters.PageSize)
+                .ToList();
+        }
 
         public Server? GetById(int id) => _context.Servers.Include(s => s.Game).FirstOrDefault(s => s.Serverid == id);
 

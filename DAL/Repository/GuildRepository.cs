@@ -1,3 +1,4 @@
+using DAL.DTO;
 using DAL.Entities;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
@@ -5,16 +6,53 @@ using System.Linq;
 
 namespace DAL.Repository
 {
-    public class GuildRepository : IGuildRepository
+    public class GuildRepository(Swd392GameAiContext context) : IGuildRepository
     {
-        private readonly Swd392GameAiContext _context;
+        private readonly Swd392GameAiContext _context = context;
 
-        public GuildRepository(Swd392GameAiContext context)
+        public List<Guild> GetAll(QueryParameters parameters, out int totalCount)
         {
-            _context = context;
-        }
+            var query = _context.Guilds.Include(g => g.Server).AsQueryable();
 
-        public List<Guild> GetAll() => _context.Guilds.Include(g => g.Server).ToList();
+            // Search
+            if (!string.IsNullOrEmpty(parameters.SearchTerm))
+            {
+                var search = parameters.SearchTerm.ToLower();
+                query = query.Where(g => g.Guildname != null && g.Guildname.ToLower().Contains(search));
+            }
+
+            // Filtering
+            if (!string.IsNullOrEmpty(parameters.Filter) && int.TryParse(parameters.Filter, out int serverId))
+            {
+                query = query.Where(g => g.Serverid == serverId);
+            }
+
+            totalCount = query.Count();
+
+            // Sorting
+            if (!string.IsNullOrEmpty(parameters.SortBy))
+            {
+                switch (parameters.SortBy.ToLower())
+                {
+                    case "guildname":
+                        query = parameters.IsDescending ? query.OrderByDescending(g => g.Guildname) : query.OrderBy(g => g.Guildname);
+                        break;
+                    default:
+                        query = query.OrderBy(g => g.Guildid);
+                        break;
+                }
+            }
+            else
+            {
+                query = query.OrderBy(g => g.Guildid);
+            }
+
+            // Paging
+            return query
+                .Skip((parameters.PageNumber - 1) * parameters.PageSize)
+                .Take(parameters.PageSize)
+                .ToList();
+        }
 
         public Guild? GetById(int id) => _context.Guilds.Include(g => g.Server).FirstOrDefault(g => g.Guildid == id);
 

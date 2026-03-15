@@ -6,7 +6,7 @@ namespace BIL.Service
 {
     public interface IEventService
     {
-        List<EventDto> GetAll();
+        PagedResult<EventDto> GetAll(QueryParameters parameters);
         Event? GetById(int id);
         List<Event> GetByGame(int gameId);
         List<Event> SearchByName(string name);

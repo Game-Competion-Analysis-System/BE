@@ -5,24 +5,39 @@ using System.Collections.Generic;
 
 namespace BIL.Service
 {
-    public class UserService : IUserService
+    public class UserService(IUserRepository repo) : IUserService
     {
-        private readonly IUserRepository _repo;
-
-        public UserService(IUserRepository repo)
+        public PagedResult<UserDto> GetAll(QueryParameters parameters)
         {
-            _repo = repo;
+            var users = repo.GetAll(parameters, out int totalCount);
+            return new PagedResult<UserDto>
+            {
+                Items = users.Select(u => new UserDto
+                {
+                    UserId = u.Userid,
+                    Username = u.Username,
+                    Email = u.Email,
+                    Role = u.Role
+                }).ToList(),
+                TotalCount = totalCount,
+                PageNumber = parameters.PageNumber,
+                PageSize = parameters.PageSize
+            };
+        }
+        public User? GetById(int id) => repo.GetById(id);
+        public void Update(User user) => repo.Update(user);
+
+        public void UpdateProfile(int userId, UpdateProfileDto dto)
+        {
+            var user = repo.GetById(userId);
+            if (user != null)
+            {
+                user.Username = dto.Username ?? user.Username;
+                user.Email = dto.Email ?? user.Email;
+                repo.Update(user);
+            }
         }
 
-        public List<UserDto> GetAll() => _repo.GetAll().Select(u => new UserDto
-        {
-            UserId = u.Userid,
-            Username = u.Username,
-            Email = u.Email,
-            Role = u.Role
-        }).ToList();
-        public User? GetById(int id) => _repo.GetById(id);
-        public void Update(User user) => _repo.Update(user);
-        public void Delete(int id) => _repo.Delete(id);
+        public void Delete(int id) => repo.Delete(id);
     }
 }

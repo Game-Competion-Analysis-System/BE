@@ -6,16 +6,10 @@ namespace Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class AuthController : ControllerBase
+public class AuthController(IAuthService authService, Swd392GameAiContext context) : ControllerBase
 {
-    private readonly IAuthService _authService;
-    private readonly Swd392GameAiContext _context;
-
-    public AuthController(IAuthService authService, Swd392GameAiContext context)
-    {
-        _authService = authService;
-        _context = context;
-    }
+    private readonly IAuthService _authService = authService;
+    private readonly Swd392GameAiContext _context = context;
 
     [HttpPost("login")]
     public IActionResult Login([FromBody] LoginRequest request)

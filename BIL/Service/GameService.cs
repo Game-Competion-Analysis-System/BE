@@ -9,32 +9,34 @@ using System.Threading.Tasks;
 
 namespace BIL.Service
 {
-    public class GameService : IGameService
+    public class GameService(IGameRepository repo) : IGameService
     {
-        private readonly IGameRepository _repo;
-
-        public GameService(IGameRepository repo)
+        public PagedResult<GameDto> GetAllGames(QueryParameters parameters)
         {
-            _repo = repo;
+            var games = repo.GetAll(parameters, out int totalCount);
+            return new PagedResult<GameDto>
+            {
+                Items = games.Select(g => new GameDto
+                {
+                    GameId = g.Gameid,
+                    GameName = g.Gamename,
+                    Genre = g.Genre,
+                    CompanyName = g.Company?.Companyname
+                }).ToList(),
+                TotalCount = totalCount,
+                PageNumber = parameters.PageNumber,
+                PageSize = parameters.PageSize
+            };
         }
 
-        public List<GameDto> GetAllGames() => _repo.GetAll().Select(g => new GameDto
-        {
-            GameId = g.Gameid,
-            GameName = g.Gamename,
-            Genre = g.Genre,
-            CompanyName = g.Company?.Companyname
-        }).ToList();
+        public List<Game> GetMMORPGGames() => repo.GetMMORPG();
 
-        public List<Game> GetMMORPGGames() => _repo.GetMMORPG();
+        public List<Game> SearchByName(string name) => repo.SearchByName(name);
 
-        public List<Game> SearchByName(string name) => _repo.SearchByName(name);
-
-        public void Create(Game game) => _repo.Add(game);
-        public Game? GetById(int id) => _repo.GetById(id);
-        public void Add(Game game) => _repo.Add(game);
-        public void Update(Game game) => _repo.Update(game);
-        public void Delete(int id) => _repo.Delete(id);
+        public void Create(Game game) => repo.Add(game);
+        public Game? GetById(int id) => repo.GetById(id);
+        public void Add(Game game) => repo.Add(game);
+        public void Update(Game game) => repo.Update(game);
+        public void Delete(int id) => repo.Delete(id);
     }
-
 }

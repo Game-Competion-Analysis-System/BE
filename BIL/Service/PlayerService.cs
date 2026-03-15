@@ -8,7 +8,17 @@ namespace BIL.Service
 {
     public class PlayerService(IPlayerRepository repo) : IPlayerService
     {
-        public List<PlayerDto> GetAll() => repo.GetAll().Select(MapToDto).ToList();
+        public PagedResult<PlayerDto> GetAll(QueryParameters parameters)
+        {
+            var players = repo.GetAll(parameters, out int totalCount);
+            return new PagedResult<PlayerDto>
+            {
+                Items = players.Select(MapToDto).ToList(),
+                TotalCount = totalCount,
+                PageNumber = parameters.PageNumber,
+                PageSize = parameters.PageSize
+            };
+        }
         public PlayerDto? GetById(int id)
         {
             var p = repo.GetById(id);

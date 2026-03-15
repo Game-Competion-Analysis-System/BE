@@ -6,7 +6,7 @@ namespace BIL.Service
 {
     public interface IPlayerService
     {
-        List<PlayerDto> GetAll();
+        PagedResult<PlayerDto> GetAll(QueryParameters parameters);
         PlayerDto? GetById(int id);
         List<PlayerDto> GetByGame(int gameId);
         List<PlayerDto> GetByServer(int serverId);

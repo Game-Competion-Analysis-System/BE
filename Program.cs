@@ -70,6 +70,9 @@ builder.Services.AddHttpClient<IAIAnalysisRepository, AIAnalysisRepository>(clie
 builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();
 builder.Services.AddScoped<ILeaderboardRepository, LeaderboardRepository>();
 
+// Register Background Worker for Cloudinary Sync
+builder.Services.AddHostedService<CloudinarySyncWorker>();
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {

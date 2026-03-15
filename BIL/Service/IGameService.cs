@@ -10,7 +10,7 @@ namespace BIL.Service
 {
     public interface IGameService
     {
-        List<GameDto> GetAllGames();
+        PagedResult<GameDto> GetAllGames(QueryParameters parameters);
         List<Game> GetMMORPGGames();
         List<Game> SearchByName(string name);
         void Create(Game game);

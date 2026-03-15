@@ -30,8 +30,27 @@ namespace GameCompetionAnalysisSystem.Controllers
             }
         }
 
+        [HttpPost("analyze-latest")]
+        public async Task<IActionResult> AnalyzeLatest()
+        {
+            var userIdStr = User.FindFirst("UserId")?.Value;
+            if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out int userId))
+                return Unauthorized();
+
+            try
+            {
+                var result = await service.AnalyzeLatestFromCloudAsync(userId);
+                if (result == null) return NotFound(new { message = "No new image found in Cloudinary to process." });
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         [HttpGet]
-        public async Task<IActionResult> GetList()
+        public async Task<IActionResult> GetList([FromQuery] QueryParameters parameters)
         {
             var userIdStr = User.FindFirst("UserId")?.Value;
             if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out int userId))
@@ -39,7 +58,7 @@ namespace GameCompetionAnalysisSystem.Controllers
 
             var role = User.FindFirst(ClaimTypes.Role)?.Value;
 
-            return Ok(await service.GetHistoryAsync(userId, role));
+            return Ok(await service.GetHistoryAsync(userId, role, parameters));
         }
 
         [HttpGet("{id}")]

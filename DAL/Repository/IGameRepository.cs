@@ -10,7 +10,7 @@ namespace DAL.Repository
 {
     public interface IGameRepository
     {
-        List<Game> GetAll();
+        List<Game> GetAll(QueryParameters parameters, out int totalCount);
         List<Game> GetMMORPG();
         List<Game> SearchByName(string name);
         Game? GetById(int id);

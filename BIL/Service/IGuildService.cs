@@ -1,3 +1,4 @@
+using DAL.DTO;
 using DAL.Entities;
 using System.Collections.Generic;
 
@@ -5,7 +6,7 @@ namespace BIL.Service
 {
     public interface IGuildService
     {
-        List<Guild> GetAll();
+        PagedResult<Guild> GetAll(QueryParameters parameters);
         Guild? GetById(int id);
         List<Guild> GetByServer(int serverId);
         List<Guild> SearchByName(string name);

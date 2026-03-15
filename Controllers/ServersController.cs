@@ -1,19 +1,20 @@
+using Microsoft.EntityFrameworkCore;
 using BIL.Service;
+using DAL.DTO;
 using DAL.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Collections.Generic;
 
 namespace GameCompetionAnalysisSystem.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/servers")]
     [Authorize]
     public class ServersController(IServerService service) : ControllerBase
     {
         [HttpGet]
         [AllowAnonymous]
-        public IActionResult GetAll() => Ok(service.GetAll());
+        public IActionResult GetList([FromQuery] QueryParameters parameters) => Ok(service.GetAll(parameters));
 
         [HttpGet("search")]
         [AllowAnonymous]

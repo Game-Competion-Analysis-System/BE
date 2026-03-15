@@ -20,16 +20,33 @@ namespace BIL.Service
             return await GetAnalysisResultAsync(analysis.Analysisid);
         }
 
-        public async Task<List<AnalysisResultDto>> GetHistoryAsync(int userId, string? role)
+        public async Task<AnalysisResultDto?> AnalyzeLatestFromCloudAsync(int userId)
+        {
+            var analysis = await repo.ProcessLatestImageFromCloudAsync(userId);
+            if (analysis == null) return null;
+            return await GetAnalysisResultAsync(analysis.Analysisid);
+        }
+
+        public async Task<PagedResult<AnalysisResultDto>> GetHistoryAsync(int userId, string? role, QueryParameters parameters)
         {
             int? filterUserId = (role?.ToLower() == "admin") ? null : userId;
-            var analyses = await repo.GetAllAsync(filterUserId);
-            var results = new List<AnalysisResultDto>();
+            var (analyses, totalCount) = await repo.GetAllAsync(parameters, filterUserId);
+            List<AnalysisResultDto> results = [];
             foreach (var a in analyses)
             {
-                results.Add(await GetAnalysisResultAsync(a.Analysisid));
+                var result = await GetAnalysisResultAsync(a.Analysisid);
+                if (result != null)
+                {
+                    results.Add(result);
+                }
             }
-            return results;
+            return new PagedResult<AnalysisResultDto>
+            {
+                Items = results,
+                TotalCount = totalCount,
+                PageNumber = parameters.PageNumber,
+                PageSize = parameters.PageSize
+            };
         }
 
         public async Task<Aianalysis?> GetByIdAsync(int id)

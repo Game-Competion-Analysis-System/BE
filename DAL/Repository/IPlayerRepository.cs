@@ -6,7 +6,7 @@ namespace DAL.Repository
 {
     public interface IPlayerRepository
     {
-        List<Player> GetAll();
+        List<Player> GetAll(QueryParameters parameters, out int totalCount);
         Player? GetById(int id);
         List<Player> GetByGame(int gameId);
         List<Player> GetByServer(int serverId);

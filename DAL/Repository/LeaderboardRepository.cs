@@ -1,17 +1,15 @@
+using DAL.DTO;
 using DAL.Entities;
 using Microsoft.EntityFrameworkCore;
-using System.Text.RegularExpressions;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace DAL.Repository
 {
-    public class LeaderboardRepository : ILeaderboardRepository
+    public class LeaderboardRepository(Swd392GameAiContext context) : ILeaderboardRepository
     {
-        private readonly Swd392GameAiContext _context;
-
-        public LeaderboardRepository(Swd392GameAiContext context)
-        {
-            _context = context;
-        }
+        private readonly Swd392GameAiContext _context = context;
 
         public async Task ParseOcrAndSaveAsync(int analysisId)
         {
@@ -45,9 +43,54 @@ namespace DAL.Repository
                 .ToListAsync();
         }
 
-        public async Task<List<Leaderboard>> GetAllAsync()
+        public async Task<(List<Leaderboard> Items, int TotalCount)> GetAllAsync(QueryParameters parameters)
         {
-            return await _context.Leaderboards.ToListAsync();
+            var query = _context.Leaderboards
+                .Include(l => l.Event)
+                .Include(l => l.Createdfromanalysis)
+                .AsQueryable();
+
+            // Search
+            if (!string.IsNullOrEmpty(parameters.SearchTerm))
+            {
+                var search = parameters.SearchTerm.ToLower();
+                query = query.Where(l => l.Title != null && l.Title.ToLower().Contains(search));
+            }
+
+            // Filtering
+            if (!string.IsNullOrEmpty(parameters.Filter))
+            {
+                var filter = parameters.Filter.ToLower();
+                query = query.Where(l => l.Metrictype != null && l.Metrictype.ToLower() == filter);
+            }
+
+            var totalCount = await query.CountAsync();
+
+            // Sorting
+            if (!string.IsNullOrEmpty(parameters.SortBy))
+            {
+                switch (parameters.SortBy.ToLower())
+                {
+                    case "title":
+                        query = parameters.IsDescending ? query.OrderByDescending(l => l.Title) : query.OrderBy(l => l.Title);
+                        break;
+                    default:
+                        query = query.OrderBy(l => l.Leaderboardid);
+                        break;
+                }
+            }
+            else
+            {
+                query = query.OrderBy(l => l.Leaderboardid);
+            }
+
+            // Paging
+            var items = await query
+                .Skip((parameters.PageNumber - 1) * parameters.PageSize)
+                .Take(parameters.PageSize)
+                .ToListAsync();
+
+            return (items, totalCount);
         }
 
         public async Task<Leaderboard?> GetByIdAsync(int id)

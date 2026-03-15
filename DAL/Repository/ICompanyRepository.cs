@@ -6,7 +6,7 @@ namespace DAL.Repository
 {
     public interface ICompanyRepository
     {
-        List<Company> GetAll();
+        List<Company> GetAll(QueryParameters parameters, out int totalCount);
         Company? GetById(int id);
         void Add(Company company);
         void Update(Company company);

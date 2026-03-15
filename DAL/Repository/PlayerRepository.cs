@@ -6,21 +6,58 @@ using System.Linq;
 
 namespace DAL.Repository
 {
-    public class PlayerRepository : IPlayerRepository
+    public class PlayerRepository(Swd392GameAiContext context) : IPlayerRepository
     {
-        private readonly Swd392GameAiContext _context;
+        private readonly Swd392GameAiContext _context = context;
 
-        public PlayerRepository(Swd392GameAiContext context)
+        public List<Player> GetAll(QueryParameters parameters, out int totalCount)
         {
-            _context = context;
-        }
+            var query = _context.Players
+                .Include(p => p.Game)
+                .Include(p => p.Server)
+                .Include(p => p.Guild)
+                .Include(p => p.Leaderboardentries)
+                .AsQueryable();
 
-        public List<Player> GetAll() => _context.Players
-            .Include(p => p.Game)
-            .Include(p => p.Server)
-            .Include(p => p.Guild)
-            .Include(p => p.Leaderboardentries)
-            .ToList();
+            // Search
+            if (!string.IsNullOrEmpty(parameters.SearchTerm))
+            {
+                var search = parameters.SearchTerm.ToLower();
+                query = query.Where(p => p.Playername != null && p.Playername.ToLower().Contains(search));
+            }
+
+            // Filtering
+            if (!string.IsNullOrEmpty(parameters.Filter) && int.TryParse(parameters.Filter, out int gameId))
+            {
+                query = query.Where(p => p.Gameid == gameId);
+            }
+
+            totalCount = query.Count();
+
+            // Sorting
+            if (!string.IsNullOrEmpty(parameters.SortBy))
+            {
+                switch (parameters.SortBy.ToLower())
+                {
+                    case "playername":
+                        query = parameters.IsDescending ? query.OrderByDescending(p => p.Playername) : query.OrderBy(p => p.Playername);
+                        break;
+                    default:
+                        query = query.OrderBy(p => p.Playerid);
+                        break;
+                }
+            }
+            else
+            {
+                query = query.OrderBy(p => p.Playerid);
+            }
+
+            // Paging
+            return query
+                .Skip((parameters.PageNumber - 1) * parameters.PageSize)
+                .Take(parameters.PageSize)
+                .ToList();
+        }
 
         public Player? GetById(int id) => _context.Players
             .Include(p => p.Game)

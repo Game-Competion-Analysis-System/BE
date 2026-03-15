@@ -1,24 +1,28 @@
+using DAL.DTO;
 using DAL.Entities;
 using DAL.Repository;
 using System.Collections.Generic;
 
 namespace BIL.Service
 {
-    public class GuildService : IGuildService
+    public class GuildService(IGuildRepository repo) : IGuildService
     {
-        private readonly IGuildRepository _repo;
-
-        public GuildService(IGuildRepository repo)
+        public PagedResult<Guild> GetAll(QueryParameters parameters)
         {
-            _repo = repo;
+            var guilds = repo.GetAll(parameters, out int totalCount);
+            return new PagedResult<Guild>
+            {
+                Items = guilds,
+                TotalCount = totalCount,
+                PageNumber = parameters.PageNumber,
+                PageSize = parameters.PageSize
+            };
         }
-
-        public List<Guild> GetAll() => _repo.GetAll();
-        public Guild? GetById(int id) => _repo.GetById(id);
-        public List<Guild> GetByServer(int serverId) => _repo.GetByServer(serverId);
-        public List<Guild> SearchByName(string name) => _repo.SearchByName(name);
-        public void Add(Guild guild) => _repo.Add(guild);
-        public void Update(Guild guild) => _repo.Update(guild);
-        public void Delete(int id) => _repo.Delete(id);
+        public Guild? GetById(int id) => repo.GetById(id);
+        public List<Guild> GetByServer(int serverId) => repo.GetByServer(serverId);
+        public List<Guild> SearchByName(string name) => repo.SearchByName(name);
+        public void Add(Guild guild) => repo.Add(guild);
+        public void Update(Guild guild) => repo.Update(guild);
+        public void Delete(int id) => repo.Delete(id);
     }
 }

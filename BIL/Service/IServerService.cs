@@ -1,3 +1,4 @@
+using DAL.DTO;
 using DAL.Entities;
 using System.Collections.Generic;
 
@@ -5,7 +6,7 @@ namespace BIL.Service
 {
     public interface IServerService
     {
-        List<Server> GetAll();
+        PagedResult<Server> GetAll(QueryParameters parameters);
         Server? GetById(int id);
         List<Server> GetByGame(int gameId);
         List<Server> SearchByName(string name);

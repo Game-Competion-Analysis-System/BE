@@ -17,7 +17,7 @@ namespace GameCompetionAnalysisSystem.Controllers
 
         [HttpGet]
         [Authorize(Roles = "admin")]
-        public IActionResult GetList() => Ok(_service.GetAll());
+        public IActionResult GetList([FromQuery] QueryParameters parameters) => Ok(_service.GetAll(parameters));
 
         [HttpGet("profile")]
         public IActionResult GetProfile()
@@ -32,15 +32,14 @@ namespace GameCompetionAnalysisSystem.Controllers
         }
 
         [HttpPut("profile")]
-        public IActionResult UpdateProfile([FromBody] User user)
+        public IActionResult UpdateProfile([FromBody] UpdateProfileDto userDto)
         {
             var userIdStr = User.FindFirst("UserId")?.Value;
             if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out int userId))
                 return Unauthorized();
 
-            user.Userid = userId;
-            _service.Update(user);
-            return Ok(user);
+            _service.UpdateProfile(userId, userDto);
+            return Ok(new { message = "Profile updated successfully" });
         }
 
         [HttpDelete("{id}")]

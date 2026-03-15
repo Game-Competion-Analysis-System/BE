@@ -1,6 +1,7 @@
 
 using Microsoft.EntityFrameworkCore;
 using BIL.Service;
+using DAL.DTO;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -27,9 +28,9 @@ namespace GameCompetionAnalysisSystem.Controllers
 
         [HttpGet]
         [AllowAnonymous]
-        public async Task<IActionResult> GetAll()
+        public async Task<IActionResult> GetAll([FromQuery] QueryParameters parameters)
         {
-            return Ok(await service.GetAllAsync());
+            return Ok(await service.GetAllAsync(parameters));
         }
 
         [HttpGet("{id}")]
