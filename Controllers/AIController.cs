@@ -17,26 +17,28 @@ namespace GameCompetionAnalysisSystem.Controllers
     [Authorize]
     public class AIController(IAIAnalysisService service) : ControllerBase
     {
-        [HttpPost("analysez")]
+        [HttpPost("analyze")]
+        [AllowAnonymous]
         public async Task<IActionResult> AnalyzeScreenshot(IFormFile file, [FromQuery] SupportedGame gameName)
         {
             var userIdStr = User.FindFirst("UserId")?.Value;
-            if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out int userId))
-                return Unauthorized();
+            int userId = 1; // Default to system user if not logged in
+            if (!string.IsNullOrEmpty(userIdStr)) int.TryParse(userIdStr, out userId);
 
             string gameNameStr = gameName == SupportedGame.VLTK_Mobile ? "VLTK Mobile" : "VLTK 2.0";
             var result = await service.AnalyzeScreenshotAsync(file, userId, gameNameStr);
-            if (result == null) return BadRequest("Analysis failed");
+            if (result == null) return BadRequest(new { message = "Failed to process image." });
 
             return Ok(result);
         }
 
         [HttpPost("analyze/automatic")]
+        [AllowAnonymous]
         public async Task<IActionResult> AnalyzeAutomatic([FromQuery] SupportedGame gameName)
         {
             var userIdStr = User.FindFirst("UserId")?.Value;
-            if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out int userId))
-                return Unauthorized();
+            int userId = 1; // Default to system user if not logged in
+            if (!string.IsNullOrEmpty(userIdStr)) int.TryParse(userIdStr, out userId);
 
             string gameNameStr = gameName == SupportedGame.VLTK_Mobile ? "VLTK Mobile" : "VLTK 2.0";
             var result = await service.AnalyzeLatestFromCloudAsync(userId, gameNameStr);
