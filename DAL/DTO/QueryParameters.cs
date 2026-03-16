@@ -3,7 +3,12 @@ namespace DAL.DTO
     public class QueryParameters
     {
         private const int MaxPageSize = 50;
-        public int PageNumber { get; set; } = 1;
+        private int _pageNumber = 1;
+        public int PageNumber
+        {
+            get => _pageNumber;
+            set => _pageNumber = (value < 1) ? 1 : value;
+        }
         private int _pageSize = 10;
         public int PageSize
         {
@@ -13,8 +18,13 @@ namespace DAL.DTO
 
         public string? SearchTerm { get; set; }
         public string? SortBy { get; set; }
-        public bool IsDescending { get; set; } = false;
-        public string? Filter { get; set; } // Can be extended with more specific filters if needed
+        public bool IsDescending { get; set; } = true; // Mặc định lấy cái mới nhất
+        public string? Filter { get; set; } 
+        
+        // New Filter Fields
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
+        public string? GameName { get; set; }
     }
 
     public class PagedResult<T>

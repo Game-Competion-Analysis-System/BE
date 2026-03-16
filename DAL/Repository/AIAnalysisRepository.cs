@@ -397,8 +397,19 @@ namespace DAL.Repository
         public async Task<(List<Aianalysis> Items, int TotalCount)> GetAllAsync(QueryParameters parameters, int? userId = null)
         {
             var query = _context.Aianalyses
-                .Include(a => a.Aiextractedfields)
                 .Include(a => a.Upload)
+                .Include(a => a.Aiextractedfields)
+                .Include(a => a.Leaderboards)
+                    .ThenInclude(lb => lb.Event)
+                        .ThenInclude(e => e.Game)
+                .Include(a => a.Leaderboards)
+                    .ThenInclude(lb => lb.Leaderboardentries)
+                        .ThenInclude(e => e.Player)
+                            .ThenInclude(p => p.Guild)
+                .Include(a => a.Leaderboards)
+                    .ThenInclude(lb => lb.Leaderboardentries)
+                        .ThenInclude(e => e.Player)
+                            .ThenInclude(p => p.Server)
                 .AsQueryable();
 
             if (userId.HasValue)
@@ -415,6 +426,24 @@ namespace DAL.Repository
                     a.Aiextractedfields.Any(f => f.Rawtext != null && f.Rawtext.ToLower().Contains(search)));
             }
 
+            // Filter by Date Range
+            if (parameters.StartDate.HasValue)
+            {
+                query = query.Where(a => a.Processedtime >= parameters.StartDate.Value);
+            }
+            if (parameters.EndDate.HasValue)
+            {
+                query = query.Where(a => a.Processedtime <= parameters.EndDate.Value);
+            }
+
+            // Filter by GameName
+            if (!string.IsNullOrEmpty(parameters.GameName))
+            {
+                var gn = parameters.GameName.ToLower();
+                query = query.Where(a => a.Aiextractedfields.Any(f => 
+                    f.Fieldtype == "GameName" && f.Rawtext != null && f.Rawtext.ToLower().Contains(gn)));
+            }
+
             var totalCount = await query.CountAsync();
 
             // Sorting
@@ -422,9 +451,9 @@ namespace DAL.Repository
                 ? query.OrderByDescending(a => a.Processedtime) 
                 : query.OrderBy(a => a.Processedtime);
 
-            // Paging
+            // Paging - Ensure Skip is never negative
             var items = await query
-                .Skip((parameters.PageNumber - 1) * parameters.PageSize)
+                .Skip(Math.Max(0, (parameters.PageNumber - 1) * parameters.PageSize))
                 .Take(parameters.PageSize)
                 .ToListAsync();
 

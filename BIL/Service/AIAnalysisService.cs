@@ -33,15 +33,9 @@ namespace BIL.Service
         {
             int? filterUserId = (role?.ToLower() == "admin") ? null : userId;
             var (analyses, totalCount) = await repo.GetAllAsync(parameters, filterUserId);
-            List<AnalysisResultDto> results = [];
-            foreach (var a in analyses)
-            {
-                var result = await GetAnalysisResultAsync(a.Analysisid);
-                if (result != null)
-                {
-                    results.Add(result);
-                }
-            }
+            
+            var results = analyses.Select(MapToDto).ToList();
+
             return new PagedResult<AnalysisResultDto>
             {
                 Items = results,
@@ -53,18 +47,22 @@ namespace BIL.Service
 
         public async Task<AnalysisResultDto?> GetByIdAsync(int id)
         {
-            return await GetAnalysisResultAsync(id);
+            var analysis = await repo.GetByIdWithDetailsAsync(id);
+            return analysis == null ? null : MapToDto(analysis);
         }
 
         public async Task<AnalysisResultDto?> GetAnalysisResultAsync(int id)
         {
             var analysis = await repo.GetByIdWithDetailsAsync(id);
-            if (analysis == null) return null;
+            return analysis == null ? null : MapToDto(analysis);
+        }
 
+        private static AnalysisResultDto MapToDto(Aianalysis analysis)
+        {
             var leaderboard = analysis.Leaderboards.FirstOrDefault();
             var eventObj = leaderboard?.Event;
             
-            // Get GameName and ServerName from extracted fields first (prioritize user input or high confidence AI)
+            // Get GameName and ServerName from extracted fields first
             var gameName = analysis.Aiextractedfields
                 .Where(f => f.Fieldtype == "GameName")
                 .OrderByDescending(f => f.Confidence)
@@ -77,16 +75,9 @@ namespace BIL.Service
                 .Select(f => f.Rawtext)
                 .FirstOrDefault();
 
-            // Fallback to linked entities if not in extracted fields
-            if (string.IsNullOrEmpty(gameName))
-            {
-                gameName = eventObj?.Game?.Gamename;
-            }
-            if (string.IsNullOrEmpty(serverName))
-            {
-                // Try to get server name from the first player in the leaderboard
-                serverName = leaderboard?.Leaderboardentries.FirstOrDefault()?.Player?.Server?.Servername;
-            }
+            // Fallback to linked entities
+            if (string.IsNullOrEmpty(gameName)) gameName = eventObj?.Game?.Gamename;
+            if (string.IsNullOrEmpty(serverName)) serverName = leaderboard?.Leaderboardentries.FirstOrDefault()?.Player?.Server?.Servername;
 
             var result = new AnalysisResultDto
             {
