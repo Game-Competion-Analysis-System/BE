@@ -11,10 +11,10 @@ namespace BIL.Service
     public interface IGameService
     {
         PagedResult<GameDto> GetAllGames(QueryParameters parameters);
-        List<Game> GetMMORPGGames();
-        List<Game> SearchByName(string name);
+        List<GameDto> GetMMORPGGames();
+        List<GameDto> SearchByName(string name);
         void Create(Game game);
-        Game? GetById(int id);
+        GameDto? GetById(int id);
         void Add(Game game);
         void Update(Game game);
         void Delete(int id);

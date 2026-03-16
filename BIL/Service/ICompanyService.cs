@@ -7,7 +7,7 @@ namespace BIL.Service
     public interface ICompanyService
     {
         PagedResult<CompanyDto> GetAll(QueryParameters parameters);
-        Company? GetById(int id);
+        CompanyDto? GetById(int id);
         void Add(Company company);
         void Update(Company company);
         void Delete(int id);

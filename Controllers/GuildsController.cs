@@ -38,7 +38,11 @@ namespace GameCompetionAnalysisSystem.Controllers
         public IActionResult Create(Guild guild)
         {
             service.Add(guild);
-            return Ok(guild);
+            return Ok(new GuildDto
+            {
+                GuildId = guild.Guildid,
+                GuildName = guild.Guildname
+            });
         }
 
         [HttpPut("{id}")]
@@ -47,7 +51,11 @@ namespace GameCompetionAnalysisSystem.Controllers
         {
             guild.Guildid = id;
             service.Update(guild);
-            return Ok(guild);
+            return Ok(new GuildDto
+            {
+                GuildId = guild.Guildid,
+                GuildName = guild.Guildname
+            });
         }
 
         [HttpDelete("{id}")]

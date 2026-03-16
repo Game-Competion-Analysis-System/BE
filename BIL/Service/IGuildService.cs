@@ -6,10 +6,10 @@ namespace BIL.Service
 {
     public interface IGuildService
     {
-        PagedResult<Guild> GetAll(QueryParameters parameters);
-        Guild? GetById(int id);
-        List<Guild> GetByServer(int serverId);
-        List<Guild> SearchByName(string name);
+        PagedResult<GuildDto> GetAll(QueryParameters parameters);
+        GuildDto? GetById(int id);
+        List<GuildDto> GetByServer(int serverId);
+        List<GuildDto> SearchByName(string name);
         void Add(Guild guild);
         void Update(Guild guild);
         void Delete(int id);

@@ -24,7 +24,17 @@ namespace BIL.Service
                 PageSize = parameters.PageSize
             };
         }
-        public Company? GetById(int id) => repo.GetById(id);
+        public CompanyDto? GetById(int id)
+        {
+            var c = repo.GetById(id);
+            return c == null ? null : new CompanyDto
+            {
+                CompanyId = c.Companyid,
+                CompanyName = c.Companyname,
+                Country = c.Country,
+                Website = c.Website
+            };
+        }
         public void Add(Company company) => repo.Add(company);
         public void Update(Company company) => repo.Update(company);
         public void Delete(int id) => repo.Delete(id);

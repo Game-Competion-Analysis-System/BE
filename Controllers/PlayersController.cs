@@ -46,7 +46,11 @@ namespace GameCompetionAnalysisSystem.Controllers
         public IActionResult Create(Player player)
         {
             service.Add(player);
-            return Ok(player);
+            return Ok(new PlayerDto
+            {
+                PlayerId = player.Playerid,
+                PlayerName = player.Playername,
+            });
         }
 
         [HttpPut("{id}")]
@@ -55,7 +59,11 @@ namespace GameCompetionAnalysisSystem.Controllers
         {
             player.Playerid = id;
             service.Update(player);
-            return Ok(player);
+            return Ok(new PlayerDto
+            {
+                PlayerId = player.Playerid,
+                PlayerName = player.Playername,
+            });
         }
 
         [HttpDelete("{id}")]

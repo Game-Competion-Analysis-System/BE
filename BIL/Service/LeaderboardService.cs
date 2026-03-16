@@ -2,6 +2,7 @@ using DAL.DTO;
 using DAL.Entities;
 using DAL.Repository;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace BIL.Service
@@ -13,36 +14,70 @@ namespace BIL.Service
             await repo.ParseOcrAndSaveAsync(analysisId);
         }
 
-        public async Task<List<Leaderboardentry>> GetTopAsync(int n)
+        public async Task<List<LeaderboardEntryDto>> GetTopAsync(int n)
         {
-            return await repo.GetTopAsync(n);
+            var entries = await repo.GetTopAsync(n);
+            return entries.Select(e => new LeaderboardEntryDto
+            {
+                Rank = e.Rank ?? 0,
+                PlayerName = e.Player?.Playername,
+                Score = e.Value ?? 0,
+                GuildName = e.Player?.Guild?.Guildname
+            }).ToList();
         }
 
-        public async Task<PagedResult<Leaderboard>> GetAllAsync(QueryParameters parameters)
+        public async Task<PagedResult<LeaderboardDto>> GetAllAsync(QueryParameters parameters)
         {
             var (items, totalCount) = await repo.GetAllAsync(parameters);
-            return new PagedResult<Leaderboard>
+            return new PagedResult<LeaderboardDto>
             {
-                Items = items,
+                Items = items.Select(l => new LeaderboardDto
+                {
+                    LeaderboardId = l.Leaderboardid,
+                    Title = l.Title,
+                    EventName = l.Event?.Eventname,
+                    MetricType = l.Metrictype
+                }).ToList(),
                 TotalCount = totalCount,
                 PageNumber = parameters.PageNumber,
                 PageSize = parameters.PageSize
             };
         }
 
-        public async Task<Leaderboard?> GetByIdAsync(int id)
+        public async Task<LeaderboardDto?> GetByIdAsync(int id)
         {
-            return await repo.GetByIdAsync(id);
+            var l = await repo.GetByIdAsync(id);
+            return l == null ? null : new LeaderboardDto
+            {
+                LeaderboardId = l.Leaderboardid,
+                Title = l.Title,
+                EventName = l.Event?.Eventname,
+                MetricType = l.Metrictype
+            };
         }
 
-        public async Task<List<Leaderboardentry>> GetEntriesByLeaderboardIdAsync(int leaderboardId)
+        public async Task<List<LeaderboardEntryDto>> GetEntriesByLeaderboardIdAsync(int leaderboardId)
         {
-            return await repo.GetEntriesByLeaderboardIdAsync(leaderboardId);
+            var entries = await repo.GetEntriesByLeaderboardIdAsync(leaderboardId);
+            return entries.Select(e => new LeaderboardEntryDto
+            {
+                Rank = e.Rank ?? 0,
+                PlayerName = e.Player?.Playername,
+                Score = e.Value ?? 0,
+                GuildName = e.Player?.Guild?.Guildname
+            }).ToList();
         }
 
-        public async Task<List<Leaderboardentry>> GetSortedEntriesByLeaderboardIdAsync(int leaderboardId)
+        public async Task<List<LeaderboardEntryDto>> GetSortedEntriesByLeaderboardIdAsync(int leaderboardId)
         {
-            return await repo.GetSortedEntriesByLeaderboardIdAsync(leaderboardId);
+            var entries = await repo.GetSortedEntriesByLeaderboardIdAsync(leaderboardId);
+            return entries.Select(e => new LeaderboardEntryDto
+            {
+                Rank = e.Rank ?? 0,
+                PlayerName = e.Player?.Playername,
+                Score = e.Value ?? 0,
+                GuildName = e.Player?.Guild?.Guildname
+            }).ToList();
         }
 
         public async Task DeleteAsync(int id)

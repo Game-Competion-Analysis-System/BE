@@ -26,9 +26,9 @@ namespace GameCompetionAnalysisSystem.Controllers
             if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out int userId))
                 return Unauthorized();
 
-            var user = _service.GetById(userId);
-            if (user == null) return NotFound();
-            return Ok(user);
+            var userDto = _service.GetById(userId);
+            if (userDto == null) return NotFound();
+            return Ok(userDto);
         }
 
         [HttpPut("profile")]

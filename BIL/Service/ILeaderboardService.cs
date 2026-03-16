@@ -11,11 +11,11 @@ namespace BIL.Service
     public interface ILeaderboardService
     {
         Task ProcessOcrAsync(int analysisId);
-        Task<List<Leaderboardentry>> GetTopAsync(int n);
-        Task<PagedResult<Leaderboard>> GetAllAsync(QueryParameters parameters);
-        Task<Leaderboard?> GetByIdAsync(int id);
-        Task<List<Leaderboardentry>> GetEntriesByLeaderboardIdAsync(int leaderboardId);
-        Task<List<Leaderboardentry>> GetSortedEntriesByLeaderboardIdAsync(int leaderboardId);
+        Task<List<LeaderboardEntryDto>> GetTopAsync(int n);
+        Task<PagedResult<LeaderboardDto>> GetAllAsync(QueryParameters parameters);
+        Task<LeaderboardDto?> GetByIdAsync(int id);
+        Task<List<LeaderboardEntryDto>> GetEntriesByLeaderboardIdAsync(int leaderboardId);
+        Task<List<LeaderboardEntryDto>> GetSortedEntriesByLeaderboardIdAsync(int leaderboardId);
         Task DeleteAsync(int id);
     }
 

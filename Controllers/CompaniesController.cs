@@ -30,7 +30,13 @@ namespace GameCompetionAnalysisSystem.Controllers
         public IActionResult Create(Company company)
         {
             service.Add(company);
-            return Ok(company);
+            return Ok(new CompanyDto
+            {
+                CompanyId = company.Companyid,
+                CompanyName = company.Companyname,
+                Country = company.Country,
+                Website = company.Website
+            });
         }
 
         [HttpPut("{id}")]
@@ -39,7 +45,13 @@ namespace GameCompetionAnalysisSystem.Controllers
         {
             company.Companyid = id;
             service.Update(company);
-            return Ok(company);
+            return Ok(new CompanyDto
+            {
+                CompanyId = company.Companyid,
+                CompanyName = company.Companyname,
+                Country = company.Country,
+                Website = company.Website
+            });
         }
 
         [HttpDelete("{id}")]

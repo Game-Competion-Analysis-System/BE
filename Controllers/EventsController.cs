@@ -38,7 +38,14 @@ namespace GameCompetionAnalysisSystem.Controllers
         public IActionResult Create(Event @event)
         {
             service.Add(@event);
-            return Ok(@event);
+            return Ok(new EventDto
+            {
+                EventId = @event.Eventid,
+                EventName = @event.Eventname,
+                EventType = @event.Eventtype,
+                StartDate = @event.Startdate,
+                EndDate = @event.Enddate
+            });
         }
 
         [HttpPut("{id}")]
@@ -47,7 +54,14 @@ namespace GameCompetionAnalysisSystem.Controllers
         {
             @event.Eventid = id;
             service.Update(@event);
-            return Ok(@event);
+            return Ok(new EventDto
+            {
+                EventId = @event.Eventid,
+                EventName = @event.Eventname,
+                EventType = @event.Eventtype,
+                StartDate = @event.Startdate,
+                EndDate = @event.Enddate
+            });
         }
 
         [HttpDelete("{id}")]

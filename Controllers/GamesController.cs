@@ -34,7 +34,12 @@ namespace GameCompetionAnalysisSystem.Controllers
         public IActionResult Create(Game game)
         {
             service.Add(game);
-            return Ok(game);
+            return Ok(new GameDto
+            {
+                GameId = game.Gameid,
+                GameName = game.Gamename,
+                Genre = game.Genre
+            });
         }
 
 
@@ -50,7 +55,12 @@ namespace GameCompetionAnalysisSystem.Controllers
         {
             game.Gameid = id;
             service.Update(game);
-            return Ok(game);
+            return Ok(new GameDto
+            {
+                GameId = game.Gameid,
+                GameName = game.Gamename,
+                Genre = game.Genre
+            });
         }
         //Delete
         [HttpDelete("{id}")]

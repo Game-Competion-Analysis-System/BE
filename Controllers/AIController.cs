@@ -6,47 +6,43 @@ using System.Security.Claims;
 
 namespace GameCompetionAnalysisSystem.Controllers
 {
+    public enum SupportedGame
+    {
+        VLTK_Mobile,
+        VLTK_2_0
+    }
+
     [ApiController]
     [Route("api/ai")]
     [Authorize]
     public class AIController(IAIAnalysisService service) : ControllerBase
     {
         [HttpPost("analyze")]
-        [Consumes("multipart/form-data")]
-        public async Task<IActionResult> Analyze(IFormFile file, [FromForm] int? eventId)
+        public async Task<IActionResult> AnalyzeScreenshot(IFormFile file, [FromQuery] SupportedGame gameName)
         {
             var userIdStr = User.FindFirst("UserId")?.Value;
             if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out int userId))
                 return Unauthorized();
 
-            try
-            {
-                var result = await service.AnalyzeScreenshotAsync(file, userId, eventId);
-                return Ok(result);
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            string gameNameStr = gameName == SupportedGame.VLTK_Mobile ? "VLTK Mobile" : "VLTK 2.0";
+            var result = await service.AnalyzeScreenshotAsync(file, userId, gameNameStr);
+            if (result == null) return BadRequest("Analysis failed");
+
+            return Ok(result);
         }
 
-        [HttpPost("analyze-latest")]
-        public async Task<IActionResult> AnalyzeLatest()
+        [HttpPost("analyze/automatic")]
+        public async Task<IActionResult> AnalyzeAutomatic([FromQuery] SupportedGame gameName)
         {
             var userIdStr = User.FindFirst("UserId")?.Value;
             if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out int userId))
                 return Unauthorized();
 
-            try
-            {
-                var result = await service.AnalyzeLatestFromCloudAsync(userId);
-                if (result == null) return NotFound(new { message = "No new image found in Cloudinary to process." });
-                return Ok(result);
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            string gameNameStr = gameName == SupportedGame.VLTK_Mobile ? "VLTK Mobile" : "VLTK 2.0";
+            var result = await service.AnalyzeLatestFromCloudAsync(userId, gameNameStr);
+            if (result == null) return NotFound(new { message = "No new image found in Cloudinary folder 'HumanUpload' to process." });
+
+            return Ok(result);
         }
 
         [HttpGet]

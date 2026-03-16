@@ -24,7 +24,17 @@ namespace BIL.Service
                 PageSize = parameters.PageSize
             };
         }
-        public User? GetById(int id) => repo.GetById(id);
+        public UserDto? GetById(int id)
+        {
+            var u = repo.GetById(id);
+            return u == null ? null : new UserDto
+            {
+                UserId = u.Userid,
+                Username = u.Username,
+                Email = u.Email,
+                Role = u.Role
+            };
+        }
         public void Update(User user) => repo.Update(user);
 
         public void UpdateProfile(int userId, UpdateProfileDto dto)

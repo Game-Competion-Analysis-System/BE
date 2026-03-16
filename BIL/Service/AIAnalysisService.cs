@@ -13,17 +13,19 @@ namespace BIL.Service
 {
     public class AIAnalysisService(IAIAnalysisRepository repo) : IAIAnalysisService
     {
-        public async Task<AnalysisResultDto?> AnalyzeScreenshotAsync(IFormFile file, int userId, int? eventId = null)
+        public async Task<AnalysisResultDto?> AnalyzeScreenshotAsync(IFormFile file, int userId, string gameName)
         {
-            var analysis = await repo.ProcessScreenshotAsync(file, userId, eventId);
+            var analysis = await repo.ProcessScreenshotAsync(file, userId, gameName);
             if (analysis == null) return null;
+
             return await GetAnalysisResultAsync(analysis.Analysisid);
         }
 
-        public async Task<AnalysisResultDto?> AnalyzeLatestFromCloudAsync(int userId)
+        public async Task<AnalysisResultDto?> AnalyzeLatestFromCloudAsync(int userId, string gameName)
         {
-            var analysis = await repo.ProcessLatestImageFromCloudAsync(userId);
+            var analysis = await repo.ProcessLatestImageFromCloudAsync(userId, gameName);
             if (analysis == null) return null;
+
             return await GetAnalysisResultAsync(analysis.Analysisid);
         }
 
@@ -49,9 +51,9 @@ namespace BIL.Service
             };
         }
 
-        public async Task<Aianalysis?> GetByIdAsync(int id)
+        public async Task<AnalysisResultDto?> GetByIdAsync(int id)
         {
-            return await repo.GetByIdAsync(id);
+            return await GetAnalysisResultAsync(id);
         }
 
         public async Task<AnalysisResultDto?> GetAnalysisResultAsync(int id)

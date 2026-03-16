@@ -38,7 +38,13 @@ namespace GameCompetionAnalysisSystem.Controllers
         public IActionResult Create(Server server)
         {
             service.Add(server);
-            return Ok(server);
+            return Ok(new ServerDto
+            {
+                ServerId = server.Serverid,
+                ServerName = server.Servername,
+                Region = server.Region,
+                Status = server.Status
+            });
         }
 
         [HttpPut("{id}")]
@@ -47,7 +53,13 @@ namespace GameCompetionAnalysisSystem.Controllers
         {
             server.Serverid = id;
             service.Update(server);
-            return Ok(server);
+            return Ok(new ServerDto
+            {
+                ServerId = server.Serverid,
+                ServerName = server.Servername,
+                Region = server.Region,
+                Status = server.Status
+            });
         }
 
         [HttpDelete("{id}")]

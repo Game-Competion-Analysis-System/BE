@@ -24,13 +24,13 @@ namespace DAL.Repository
             ));
         private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
-        public async Task<Aianalysis> ProcessScreenshotAsync(IFormFile file, int userId, int? eventId = null)
+        public async Task<Aianalysis> ProcessScreenshotAsync(IFormFile file, int userId, string gameName)
         {
-            // 1. Upload to Cloudinary (Step 3-4)
+            // 1. Upload to Cloudinary (Step 3-4) - Manual upload goes to "AI upload"
             var uploadParams = new ImageUploadParams
             {
                 File = new FileDescription(file.FileName, file.OpenReadStream()),
-                Folder = "game-analysis"
+                Folder = "AI upload"
             };
             var uploadResult = await _cloudinary.UploadAsync(uploadParams);
             
@@ -38,56 +38,90 @@ namespace DAL.Repository
                 throw new Exception($"Cloudinary upload failed: {uploadResult.Error.Message}");
 
             var imageUrl = uploadResult.SecureUrl?.ToString() ?? throw new Exception("Cloudinary upload failed: No URL returned");
-            return await ExecuteAnalysisFlow(imageUrl, userId, eventId);
+            return await ExecuteAnalysisFlow(imageUrl, userId, gameName);
         }
 
-        public async Task<Aianalysis?> ProcessLatestImageFromCloudAsync(int userId)
+        public async Task<Aianalysis?> ProcessLatestImageFromCloudAsync(int userId, string gameName)
         {
-            // 1. Get latest image from Cloudinary folder
-            var listParams = new ListResourcesByPrefixParams
+            string? imageUrl = null;
+            string? publicId = null;
+            string? createdAt = null;
+
+            // 1. Try SEARCH API first - Get from "HumanUpload" folder
+            var searchResult = await _cloudinary.Search()
+                .Expression("folder:\"HumanUpload\" AND resource_type:image")
+                .SortBy("created_at", "desc")
+                .MaxResults(1)
+                .ExecuteAsync();
+
+            var searchLatest = searchResult.Resources?.FirstOrDefault();
+            if (searchLatest != null)
             {
-                Type = "upload",
-                Prefix = "game-analysis/",
-                MaxResults = 1,
-                Direction = "desc"
-            };
-            
-            var resources = await _cloudinary.ListResourcesAsync(listParams);
-            var latest = resources.Resources?.FirstOrDefault();
-            
-            if (latest == null) return null;
+                imageUrl = searchLatest.SecureUrl?.ToString();
+                publicId = searchLatest.PublicId;
+                createdAt = searchLatest.CreatedAt;
+            }
+            else
+            {
+                // 2. Fallback to ListResources
+                Console.WriteLine("Cloudinary: Search API returned 0 results for 'HumanUpload'. Trying ListResources fallback...");
+                var listParams = new ListResourcesByPrefixParams
+                {
+                    Type = "upload",
+                    Prefix = "HumanUpload/",
+                    MaxResults = 1,
+                    Direction = "desc"
+                };
+                var listResources = await _cloudinary.ListResourcesAsync(listParams);
+                var listLatest = listResources.Resources?.FirstOrDefault();
+                if (listLatest != null)
+                {
+                    imageUrl = listLatest.SecureUrl?.ToString();
+                    publicId = listLatest.PublicId;
+                    createdAt = listLatest.CreatedAt;
+                }
+            }
 
-            var imageUrl = latest.SecureUrl?.ToString() ?? throw new Exception("Cloudinary resource missing SecureUrl");
+            if (string.IsNullOrEmpty(imageUrl))
+            {
+                Console.WriteLine("Cloudinary: Truly no images found in 'game-analysis/' folder.");
+                return null;
+            }
 
-            // 2. Check if already processed (Deduplication)
-            var exists = await _context.Imageuploads.AnyAsync(i => i.Imageurl == imageUrl);
-            if (exists) return null;
+            // CHECK IF ALREADY PROCESSED
+            var exists = await _context.Imageuploads.AnyAsync(u => u.Imageurl == imageUrl);
+            if (exists)
+            {
+                Console.WriteLine($"Cloudinary: Image {publicId} already processed. Skipping.");
+                return null;
+            }
+
+            Console.WriteLine($"Cloudinary: Found latest image! PublicID: {publicId}, CreatedAt: {createdAt}, URL: {imageUrl}");
 
             // 3. Run analysis flow
-            return await ExecuteAnalysisFlow(imageUrl, userId, null);
+            return await ExecuteAnalysisFlow(imageUrl, userId, gameName);
         }
 
-        private async Task<Aianalysis> ExecuteAnalysisFlow(string imageUrl, int userId, int? eventId)
+        private async Task<Aianalysis> ExecuteAnalysisFlow(string imageUrl, int userId, string gameName)
         {
-            // 2. Add ImageUpload with Status = "Pending" (Step 5)
+            // 2. Add ImageUpload with Status = "Pending"
             var upload = new Imageupload
             {
                 Userid = userId,
-                Eventid = eventId,
                 Imageurl = imageUrl,
                 Uploadtime = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified),
                 Status = "Pending"
             };
             _context.Imageuploads.Add(upload);
-            await _context.SaveChangesAsync(); // Step 6
+            await _context.SaveChangesAsync();
 
             Aianalysis? analysis = null;
             try 
             {
-                // 3. Call AI OCR (Step 7-9)
+                // 3. Call AI OCR
                 var ocr = await CallGroqOcrWithUrl(imageUrl);
 
-                // 4. Add AIAnalysis (Step 10)
+                // 4. Add AIAnalysis
                 analysis = new Aianalysis
                 {
                     Uploadid = upload.Uploadid,
@@ -105,7 +139,7 @@ namespace DAL.Repository
                     throw new Exception("AI returned empty content");
                 }
                 
-                // Robust JSON extraction using a more flexible approach
+                // Robust JSON extraction
                 string jsonContent = content;
                 var startIdx = content.IndexOf('{');
                 var endIdx = content.LastIndexOf('}');
@@ -124,32 +158,20 @@ namespace DAL.Repository
                     Dictionary<string, Game> gameCache = [];
                     Dictionary<string, Server> serverCache = [];
                     Dictionary<string, Guild> guildCache = [];
+                    Dictionary<string, Player> playerCache = [];
 
-                    // 1. Extract Game Name (Strictly VLTK Mobile or VLTK 2.0)
-                    Game? targetGame = null;
-                    string? gn = null;
-                    if (root.TryGetProperty("game_name", out var gElem) && gElem.ValueKind == JsonValueKind.String) gn = gElem.GetString();
-                    
-                    if (!string.IsNullOrEmpty(gn))
+                    // 1. Get Game from Parameter (User choice)
+                    var targetGame = await _context.Games.FirstOrDefaultAsync(g => g.Gamename == gameName);
+                    if (targetGame != null)
                     {
-                        // Normalize AI output to match our system
-                        string normalizedGn = gn.ToLower();
-                        string targetName = normalizedGn.Contains("mobile") || normalizedGn.Contains("vltkm") ? "VLTK Mobile" : "VLTK 2.0";
-
-                        targetGame = await _context.Games.FirstOrDefaultAsync(g => g.Gamename == targetName);
-                        
-                        // If not found in DB but it's one of our supported games, we can't do much but we definitely DON'T create "rác" games
-                        if (targetGame != null)
-                        {
-                            gameCache[targetName] = targetGame;
-                            _context.Aiextractedfields.Add(new Aiextractedfield { Analysisid = analysis.Analysisid, Rawtext = gn, Fieldtype = "GameName", Confidence = 0.99 });
-                        }
+                        gameCache[gameName] = targetGame;
+                        _context.Aiextractedfields.Add(new Aiextractedfield { Analysisid = analysis.Analysisid, Rawtext = gameName, Fieldtype = "GameName", Confidence = 1.0 });
                     }
 
                     // 2. Extract Server Name
                     Server? targetServer = null;
                     string? sn = null;
-                    if (root.TryGetProperty("server_name", out var sElem) && sElem.ValueKind == JsonValueKind.String) sn = sElem.GetString();
+                    if (root.TryGetProperty("server_name", out var sElem)) sn = sElem.GetString();
 
                     if (!string.IsNullOrEmpty(sn))
                     {
@@ -166,28 +188,15 @@ namespace DAL.Repository
                     }
 
                     // 3. Extract Event Name
-                    Event? targetEvent = null;
                     string? en = null;
-                    if (eventId.HasValue)
-                    {
-                        targetEvent = await _context.Events.Include(e => e.Game).FirstOrDefaultAsync(e => e.Eventid == eventId.Value);
-                        if (targetEvent != null && targetGame == null) targetGame = targetEvent.Game;
-                    }
-                    else if (root.TryGetProperty("event_name", out var eElem) && eElem.ValueKind == JsonValueKind.String)
-                    {
-                        en = eElem.GetString();
-                    }
+                    if (root.TryGetProperty("event_name", out var eElem)) en = eElem.GetString();
 
+                    Event? targetEvent = await _context.Events.FirstOrDefaultAsync(e => e.Eventname == en && (targetGame == null || e.Gameid == targetGame.Gameid));
                     if (targetEvent == null && !string.IsNullOrEmpty(en))
                     {
-                        targetEvent = await _context.Events.FirstOrDefaultAsync(e => e.Eventname == en && (targetGame == null || e.Gameid == targetGame.Gameid));
-                        if (targetEvent == null)
-                        {
-                            targetEvent = new Event { Eventname = en, Game = targetGame, Startdate = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified) };
-                            _context.Events.Add(targetEvent);
-                            await _context.SaveChangesAsync();
-                        }
-
+                        targetEvent = new Event { Eventname = en, Game = targetGame, Startdate = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified) };
+                        _context.Events.Add(targetEvent);
+                        await _context.SaveChangesAsync();
                         _context.Aiextractedfields.Add(new Aiextractedfield { Analysisid = analysis.Analysisid, Rawtext = en, Fieldtype = "EventName", Confidence = 0.95 });
                     }
 
@@ -217,40 +226,44 @@ namespace DAL.Repository
                             double score = 0;
                             if (item.TryGetProperty("score", out var scE)) { if (scE.ValueKind == JsonValueKind.Number) scE.TryGetDouble(out score); else if (double.TryParse(scE.GetString() ?? "0", out var scS)) score = scS; }
                             
-                            string? guildName = null;
-                            if (item.TryGetProperty("guild_name", out var gNE)) guildName = gNE.GetString();
+                            string? guildNameStr = null;
+                            if (item.TryGetProperty("guild_name", out var gNE)) guildNameStr = gNE.GetString();
 
                             if (string.IsNullOrEmpty(pName)) continue;
 
                             // Find or Create Guild
                             Guild? playerGuild = null;
-                            if (!string.IsNullOrEmpty(guildName))
+                            if (!string.IsNullOrEmpty(guildNameStr))
                             {
-                                if (!guildCache.TryGetValue(guildName, out playerGuild))
+                                if (!guildCache.TryGetValue(guildNameStr, out playerGuild))
                                 {
-                                    playerGuild = await _context.Guilds.FirstOrDefaultAsync(g => g.Guildname == guildName && (targetServer == null || g.Serverid == targetServer.Serverid));
+                                    playerGuild = await _context.Guilds.FirstOrDefaultAsync(g => g.Guildname == guildNameStr && (targetServer == null || g.Serverid == targetServer.Serverid));
                                     if (playerGuild == null)
                                     {
-                                        playerGuild = new Guild { Guildname = guildName, Server = targetServer };
+                                        playerGuild = new Guild { Guildname = guildNameStr, Server = targetServer };
                                         _context.Guilds.Add(playerGuild);
                                         await _context.SaveChangesAsync();
                                     }
-                                    guildCache[guildName] = playerGuild;
+                                    guildCache[guildNameStr] = playerGuild;
                                 }
                             }
 
                             // Find or Create Player
-                            var player = await _context.Players.FirstOrDefaultAsync(p => p.Playername == pName && (targetGame == null || p.Gameid == targetGame.Gameid));
-                            if (player == null)
+                            if (!playerCache.TryGetValue(pName, out var player))
                             {
-                                player = new Player { Playername = pName, Game = targetGame, Server = targetServer, Guild = playerGuild };
-                                _context.Players.Add(player);
-                                await _context.SaveChangesAsync();
-                            }
-                            else 
-                            {
-                                if (player.Guildid == null && playerGuild != null) player.Guildid = playerGuild.Guildid;
-                                if (player.Serverid == null && targetServer != null) player.Serverid = targetServer.Serverid;
+                                player = await _context.Players.FirstOrDefaultAsync(p => p.Playername == pName && (targetGame == null || p.Gameid == targetGame.Gameid));
+                                if (player == null)
+                                {
+                                    player = new Player { Playername = pName, Game = targetGame, Server = targetServer, Guild = playerGuild };
+                                    _context.Players.Add(player);
+                                    await _context.SaveChangesAsync();
+                                }
+                                else 
+                                {
+                                    if (player.Guildid == null && playerGuild != null) player.Guildid = playerGuild.Guildid;
+                                    if (player.Serverid == null && targetServer != null) player.Serverid = targetServer.Serverid;
+                                }
+                                playerCache[pName] = player;
                             }
 
                             // Add Entry
@@ -276,16 +289,13 @@ namespace DAL.Repository
             }
             catch (Exception ex)
             {
-                // Step 15-16: Failed
                 if (upload != null)
                 {
                     upload.Status = "Failed";
                     await _context.SaveChangesAsync();
                 }
-
-                // Log the error for debugging
                 Console.WriteLine($"Error processing AI result: {ex.Message}");
-                throw; // Step 17: Rethrow to let Controller return 400 Bad Request
+                throw;
             }
 
             return analysis;
@@ -295,13 +305,15 @@ namespace DAL.Repository
         {
             var apiKey = _config["Groq:ApiKey"] ?? throw new Exception("Missing Groq API Key");
 
-            var promptText = "Phân tích ảnh chụp màn hình bảng xếp hạng game này. " +
-                "QUAN TRỌNG: Hệ thống chỉ hỗ trợ 2 game là 'VLTK Mobile' và 'VLTK 2.0'. Hãy xác định xem ảnh thuộc game nào trong 2 game này. " +
-                "Trích xuất thông tin: Tên Game (chỉ được là 'VLTK Mobile' hoặc 'VLTK 2.0'), Tên Máy Chủ (Server Name), Tên Sự Kiện (Event Name). " +
-                "Đối với danh sách bảng xếp hạng, trích xuất: Hạng (Rank), Tên Người Chơi (Player Name), Điểm Số/Lực Chiến (Score), Bang Hội (Guild Name). " +
-                "QUAN TRỌNG: Trả về JSON chuẩn với cấu trúc: " +
-                "{ 'game_name': '...', 'server_name': '...', 'event_name': '...', 'leaderboard': [ { 'rank': 1, 'player_name': '...', 'score': 100, 'guild_name': '...' } ] }. " +
-                "Nếu không thấy thông tin nào, hãy để null. Nếu thấy 'Bang Hội' (Guild) cho từng người chơi, hãy trích xuất chính xác.";
+            var promptText = "Bạn là chuyên gia phân tích ảnh chụp màn hình bảng xếp hạng game VLTK Mobile và VLTK 2.0. " +
+                "NHIỆM VỤ: Trích xuất thông tin chính xác từ ảnh theo định dạng JSON chuẩn. " +
+                "YÊU CẦU DỮ LIỆU: " +
+                "1. 'game_name': Phải là 'VLTK Mobile' hoặc 'VLTK 2.0'. " +
+                "2. 'server_name': Tên máy chủ (ví dụ: Thái Sơn, S1...). " +
+                "3. 'event_name': Tên sự kiện bảng xếp hạng (ví dụ: Công Thành Chiến, Võ Lâm Minh Chủ...). " +
+                "4. 'leaderboard': Danh sách người chơi gồm: 'rank' (số nguyên), 'player_name' (tên chính xác), 'score' (điểm số hoặc lực chiến), 'guild_name' (tên bang hội nếu có). " +
+                "QUAN TRỌNG: Chỉ trả về mã JSON duy nhất, không giải thích thêm. Nếu không thấy trường nào hãy để null. " +
+                "Ví dụ định dạng trả về: { \"game_name\": \"...\", \"server_name\": \"...\", \"event_name\": \"...\", \"leaderboard\": [ { \"rank\": 1, \"player_name\": \"...\", \"score\": 100, \"guild_name\": \"...\" } ] }";
 
             var requestBody = new
             {
@@ -322,7 +334,7 @@ namespace DAL.Repository
                         }
                     }
                 },
-                temperature = 0.1,
+                temperature = 0.0,
                 response_format = new { type = "json_object" }
             };
 
@@ -392,17 +404,6 @@ namespace DAL.Repository
             return await _context.Aianalyses
                 .Include(a => a.Upload)
                 .Include(a => a.Aiextractedfields)
-                .Include(a => a.Leaderboards)
-                    .ThenInclude(lb => lb.Leaderboardentries)
-                        .ThenInclude(e => e.Player)
-                            .ThenInclude(p => p.Guild)
-                .Include(a => a.Leaderboards)
-                    .ThenInclude(lb => lb.Event)
-                        .ThenInclude(ev => ev.Game)
-                .Include(a => a.Leaderboards)
-                    .ThenInclude(lb => lb.Event)
-                        .ThenInclude(ev => ev.Game)
-                            .ThenInclude(g => g.Servers)
                 .FirstOrDefaultAsync(a => a.Analysisid == id);
         }
 
@@ -457,13 +458,15 @@ namespace DAL.Repository
 
             var base64Image = Convert.ToBase64String(ms.ToArray());
 
-            var promptText = "Phân tích ảnh chụp màn hình bảng xếp hạng game này. " +
-                "QUAN TRỌNG: Hệ thống chỉ hỗ trợ 2 game là 'VLTK Mobile' và 'VLTK 2.0'. Hãy xác định xem ảnh thuộc game nào trong 2 game này. " +
-                "Trích xuất thông tin: Tên Game (chỉ được là 'VLTK Mobile' hoặc 'VLTK 2.0'), Tên Máy Chủ (Server Name), Tên Sự Kiện (Event Name). " +
-                "Đối với danh sách bảng xếp hạng, trích xuất: Hạng (Rank), Tên Người Chơi (Player Name), Điểm Số/Lực Chiến (Score), Bang Hội (Guild Name). " +
-                "QUAN TRỌNG: Trả về JSON chuẩn với cấu trúc: " +
-                "{ 'game_name': '...', 'server_name': '...', 'event_name': '...', 'leaderboard': [ { 'rank': 1, 'player_name': '...', 'score': 100, 'guild_name': '...' } ] }. " +
-                "Nếu không thấy thông tin nào, hãy để null. Nếu thấy 'Bang Hội' (Guild) cho từng người chơi, hãy trích xuất chính xác.";
+            var promptText = "Bạn là chuyên gia phân tích ảnh chụp màn hình bảng xếp hạng game VLTK Mobile và VLTK 2.0. " +
+                "NHIỆM VỤ: Trích xuất thông tin chính xác từ ảnh theo định dạng JSON chuẩn. " +
+                "YÊU CẦU DỮ LIỆU: " +
+                "1. 'game_name': Phải là 'VLTK Mobile' hoặc 'VLTK 2.0'. " +
+                "2. 'server_name': Tên máy chủ (ví dụ: Thái Sơn, S1...). " +
+                "3. 'event_name': Tên sự kiện bảng xếp hạng (ví dụ: Công Thành Chiến, Võ Lâm Minh Chủ...). " +
+                "4. 'leaderboard': Danh sách người chơi gồm: 'rank' (số nguyên), 'player_name' (tên chính xác), 'score' (điểm số hoặc lực chiến), 'guild_name' (tên bang hội nếu có). " +
+                "QUAN TRỌNG: Chỉ trả về mã JSON duy nhất, không giải thích thêm. Nếu không thấy trường nào hãy để null. " +
+                "Ví dụ định dạng trả về: { \"game_name\": \"...\", \"server_name\": \"...\", \"event_name\": \"...\", \"leaderboard\": [ { \"rank\": 1, \"player_name\": \"...\", \"score\": 100, \"guild_name\": \"...\" } ] }";
 
             var requestBody = new
             {
@@ -484,7 +487,7 @@ namespace DAL.Repository
                         }
                     }
                 },
-                temperature = 0.1,
+                temperature = 0.0,
                 response_format = new { type = "json_object" }
             };
 

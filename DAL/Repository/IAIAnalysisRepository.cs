@@ -11,8 +11,8 @@ namespace DAL.Repository
 {
     public interface IAIAnalysisRepository
     {
-        Task<Aianalysis> ProcessScreenshotAsync(IFormFile file, int userId, int? eventId = null);
-        Task<Aianalysis?> ProcessLatestImageFromCloudAsync(int userId);
+        Task<Aianalysis> ProcessScreenshotAsync(IFormFile file, int userId, string gameName);
+        Task<Aianalysis?> ProcessLatestImageFromCloudAsync(int userId, string gameName);
         Task<(List<Aianalysis> Items, int TotalCount)> GetAllAsync(QueryParameters parameters, int? userId = null);
         Task<Aianalysis?> GetByIdAsync(int id);
         Task<Aianalysis?> GetByIdWithDetailsAsync(int id);

@@ -29,12 +29,34 @@ namespace BIL.Service
             };
         }
 
-        public List<Game> GetMMORPGGames() => repo.GetMMORPG();
+        public List<GameDto> GetMMORPGGames() => repo.GetMMORPG().Select(g => new GameDto
+        {
+            GameId = g.Gameid,
+            GameName = g.Gamename,
+            Genre = g.Genre,
+            CompanyName = g.Company?.Companyname
+        }).ToList();
 
-        public List<Game> SearchByName(string name) => repo.SearchByName(name);
+        public List<GameDto> SearchByName(string name) => repo.SearchByName(name).Select(g => new GameDto
+        {
+            GameId = g.Gameid,
+            GameName = g.Gamename,
+            Genre = g.Genre,
+            CompanyName = g.Company?.Companyname
+        }).ToList();
 
         public void Create(Game game) => repo.Add(game);
-        public Game? GetById(int id) => repo.GetById(id);
+        public GameDto? GetById(int id)
+        {
+            var g = repo.GetById(id);
+            return g == null ? null : new GameDto
+            {
+                GameId = g.Gameid,
+                GameName = g.Gamename,
+                Genre = g.Genre,
+                CompanyName = g.Company?.Companyname
+            };
+        }
         public void Add(Game game) => repo.Add(game);
         public void Update(Game game) => repo.Update(game);
         public void Delete(int id) => repo.Delete(id);
