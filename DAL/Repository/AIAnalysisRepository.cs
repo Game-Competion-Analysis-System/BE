@@ -84,16 +84,20 @@ namespace DAL.Repository
 
             if (string.IsNullOrEmpty(imageUrl))
             {
-                Console.WriteLine("Cloudinary: Truly no images found in 'game-analysis/' folder.");
+                Console.WriteLine("Cloudinary: Truly no images found in 'AirtestUpload' folder.");
                 return null;
             }
 
-            // CHECK IF ALREADY PROCESSED
-            var exists = await _context.Imageuploads.AnyAsync(u => u.Imageurl == imageUrl);
-            if (exists)
+            // CHECK IF ALREADY PROCESSED - If exists, return the latest analysis for this image
+            var existingUpload = await _context.Imageuploads
+                .Include(u => u.Aianalyses)
+                .FirstOrDefaultAsync(u => u.Imageurl == imageUrl);
+
+            if (existingUpload != null && existingUpload.Aianalyses.Any())
             {
-                Console.WriteLine($"Cloudinary: Image {publicId} already processed. Skipping.");
-                return null;
+                var existingAnalysis = existingUpload.Aianalyses.OrderByDescending(a => a.Processedtime).First();
+                Console.WriteLine($"Cloudinary: Image {publicId} already processed. Returning existing Analysis ID: {existingAnalysis.Analysisid}");
+                return existingAnalysis;
             }
 
             Console.WriteLine($"Cloudinary: Found latest image! PublicID: {publicId}, CreatedAt: {createdAt}, URL: {imageUrl}");
@@ -216,18 +220,44 @@ namespace DAL.Repository
                     {
                         foreach (var item in lbArray.EnumerateArray())
                         {
-                            // Extract basic info
+                            // 1. Extract Rank
                             int rank = 0;
-                            if (item.TryGetProperty("rank", out var rE)) { if (rE.ValueKind == JsonValueKind.Number) rE.TryGetInt32(out rank); else if (int.TryParse(rE.GetString() ?? "0", out var rS)) rank = rS; }
+                            if (item.TryGetProperty("rank", out var rE) || item.TryGetProperty("Rank", out rE))
+                            {
+                                if (rE.ValueKind == JsonValueKind.Number) rE.TryGetInt32(out rank);
+                                else if (int.TryParse(rE.GetString() ?? "0", out var rS)) rank = rS;
+                            }
                             
+                            // 2. Extract Player Name
                             string? pName = null;
-                            if (item.TryGetProperty("player_name", out var pE)) pName = pE.GetString();
+                            if (item.TryGetProperty("player_name", out var pE) || 
+                                item.TryGetProperty("PlayerName", out pE) || 
+                                item.TryGetProperty("name", out pE) || 
+                                item.TryGetProperty("Name", out pE))
+                            {
+                                pName = pE.GetString();
+                            }
                             
+                            // 3. Extract Score
                             double score = 0;
-                            if (item.TryGetProperty("score", out var scE)) { if (scE.ValueKind == JsonValueKind.Number) scE.TryGetDouble(out score); else if (double.TryParse(scE.GetString() ?? "0", out var scS)) score = scS; }
+                            if (item.TryGetProperty("score", out var scE) || 
+                                item.TryGetProperty("Score", out scE) || 
+                                item.TryGetProperty("value", out scE) || 
+                                item.TryGetProperty("Value", out scE))
+                            {
+                                if (scE.ValueKind == JsonValueKind.Number) scE.TryGetDouble(out score);
+                                else if (double.TryParse(scE.GetString()?.Replace(",", "").Replace(".", "") ?? "0", out var scS)) score = scS;
+                            }
                             
+                            // 4. Extract Guild Name
                             string? guildNameStr = null;
-                            if (item.TryGetProperty("guild_name", out var gNE)) guildNameStr = gNE.GetString();
+                            if (item.TryGetProperty("guild_name", out var gNE) || 
+                                item.TryGetProperty("GuildName", out gNE) || 
+                                item.TryGetProperty("guild", out gNE) || 
+                                item.TryGetProperty("Guild", out gNE))
+                            {
+                                guildNameStr = gNE.GetString();
+                            }
 
                             if (string.IsNullOrEmpty(pName)) continue;
 
@@ -305,19 +335,26 @@ namespace DAL.Repository
         {
             var apiKey = _config["Groq:ApiKey"] ?? throw new Exception("Missing Groq API Key");
 
-            var promptText = "Bạn là chuyên gia phân tích ảnh chụp màn hình bảng xếp hạng game VLTK Mobile và VLTK 2.0. " +
-                "NHIỆM VỤ: Trích xuất thông tin chính xác từ ảnh theo định dạng JSON chuẩn. " +
-                "YÊU CẦU DỮ LIỆU: " +
-                "1. 'game_name': Phải là 'VLTK Mobile' hoặc 'VLTK 2.0'. " +
-                "2. 'server_name': Tên máy chủ (ví dụ: Thái Sơn, S1...). " +
-                "3. 'event_name': Tên sự kiện bảng xếp hạng (ví dụ: Công Thành Chiến, Võ Lâm Minh Chủ...). " +
-                "4. 'leaderboard': Danh sách người chơi gồm: 'rank' (số nguyên), 'player_name' (tên chính xác), 'score' (điểm số hoặc lực chiến), 'guild_name' (tên bang hội nếu có). " +
-                "QUAN TRỌNG: Chỉ trả về mã JSON duy nhất, không giải thích thêm. Nếu không thấy trường nào hãy để null. " +
-                "Ví dụ định dạng trả về: { \"game_name\": \"...\", \"server_name\": \"...\", \"event_name\": \"...\", \"leaderboard\": [ { \"rank\": 1, \"player_name\": \"...\", \"score\": 100, \"guild_name\": \"...\" } ] }";
+            var promptText = "Bạn là một AI chuyên gia về OCR và phân tích dữ liệu game. " +
+                "NHIỆM VỤ: Đọc ảnh chụp màn hình bảng xếp hạng trong game (thường là VLTK Mobile hoặc VLTK 2.0). " +
+                "YÊU CẦU CHI TIẾT: " +
+                "1. 'game_name': Xác định chính xác là 'VLTK Mobile' hoặc 'VLTK 2.0'. " +
+                "2. 'server_name': Tìm tên máy chủ (ví dụ: S100, Thái Sơn...). " +
+                "3. 'event_name': Tìm tiêu đề của bảng xếp hạng hiện tại (ví dụ: Bảng xếp hạng Lực Chiến, Công Thành Chiến...). " +
+                "4. 'leaderboard': Đây là phần quan trọng nhất. Hãy quét TOÀN BỘ các hàng trong bảng, bao gồm: " +
+                "   - 'rank': Thứ hạng (1, 2, 3...). " +
+                "   - 'player_name': Tên người chơi chính xác (hãy cẩn thận với các ký tự đặc biệt). " +
+                "   - 'score': Giá trị lực chiến, điểm số, hoặc cấp độ (là một số). " +
+                "   - 'guild_name': Tên bang hội (nếu có, nếu không thấy hãy để null). " +
+                "QUY TẮC: " +
+                "- Chỉ trả về duy nhất 1 đối tượng JSON, không có văn bản giải thích. " +
+                "- Phải trích xuất được ít nhất 10 hàng nếu ảnh có đủ dữ liệu. " +
+                "- Nếu không chắc chắn về một trường, hãy để null thay vì đoán sai. " +
+                "Ví dụ: { \"game_name\": \"...\", \"server_name\": \"...\", \"event_name\": \"...\", \"leaderboard\": [ { \"rank\": 1, \"player_name\": \"...\", \"score\": 123456, \"guild_name\": \"...\" } ] }";
 
             var requestBody = new
             {
-                model = "meta-llama/llama-4-scout-17b-16e-instruct", 
+                model = "meta-llama/llama-4-scout-17b-16e-instruct", // Sử dụng model Llama 4 mới nhất hỗ trợ Vision của Groq
                 messages = new object[]
                 {
                     new
@@ -404,6 +441,17 @@ namespace DAL.Repository
             return await _context.Aianalyses
                 .Include(a => a.Upload)
                 .Include(a => a.Aiextractedfields)
+                .Include(a => a.Leaderboards)
+                    .ThenInclude(lb => lb.Event)
+                        .ThenInclude(e => e.Game)
+                .Include(a => a.Leaderboards)
+                    .ThenInclude(lb => lb.Leaderboardentries)
+                        .ThenInclude(e => e.Player)
+                            .ThenInclude(p => p.Guild)
+                .Include(a => a.Leaderboards)
+                    .ThenInclude(lb => lb.Leaderboardentries)
+                        .ThenInclude(e => e.Player)
+                            .ThenInclude(p => p.Server)
                 .FirstOrDefaultAsync(a => a.Analysisid == id);
         }
 

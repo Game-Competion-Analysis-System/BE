@@ -17,7 +17,7 @@ namespace GameCompetionAnalysisSystem.Controllers
     [Authorize]
     public class AIController(IAIAnalysisService service) : ControllerBase
     {
-        [HttpPost("analyze")]
+        [HttpPost("analysez")]
         public async Task<IActionResult> AnalyzeScreenshot(IFormFile file, [FromQuery] SupportedGame gameName)
         {
             var userIdStr = User.FindFirst("UserId")?.Value;
@@ -40,7 +40,7 @@ namespace GameCompetionAnalysisSystem.Controllers
 
             string gameNameStr = gameName == SupportedGame.VLTK_Mobile ? "VLTK Mobile" : "VLTK 2.0";
             var result = await service.AnalyzeLatestFromCloudAsync(userId, gameNameStr);
-            if (result == null) return NotFound(new { message = "No new image found in Cloudinary folder 'AirtestUpload' to process." });
+            if (result == null) return NotFound(new { message = "No image found in Cloudinary folder 'AirtestUpload' to process." });
 
             return Ok(result);
         }

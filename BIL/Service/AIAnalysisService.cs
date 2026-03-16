@@ -108,6 +108,7 @@ namespace BIL.Service
                         Rank = e.Rank ?? 0,
                         PlayerName = e.Player?.Playername ?? "Unknown",
                         Score = e.Value ?? 0,
+                        Value = e.Value ?? 0,
                         GuildName = e.Player?.Guild?.Guildname
                     })
                     .ToList();
