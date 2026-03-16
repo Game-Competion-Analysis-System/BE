@@ -21,30 +21,44 @@ namespace GameCompetionAnalysisSystem.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> AnalyzeScreenshot(IFormFile file, [FromQuery] SupportedGame gameName)
         {
-            var userIdStr = User.FindFirst("UserId")?.Value;
-            int userId = 1; // Default to system user if not logged in
-            if (!string.IsNullOrEmpty(userIdStr)) int.TryParse(userIdStr, out userId);
+            try
+            {
+                var userIdStr = User.FindFirst("UserId")?.Value;
+                int userId = 1; // Default to system user if not logged in
+                if (!string.IsNullOrEmpty(userIdStr)) int.TryParse(userIdStr, out userId);
 
-            string gameNameStr = gameName == SupportedGame.VLTK_Mobile ? "VLTK Mobile" : "VLTK 2.0";
-            var result = await service.AnalyzeScreenshotAsync(file, userId, gameNameStr);
-            if (result == null) return BadRequest(new { message = "Failed to process image." });
+                string gameNameStr = gameName == SupportedGame.VLTK_Mobile ? "VLTK Mobile" : "VLTK 2.0";
+                var result = await service.AnalyzeScreenshotAsync(file, userId, gameNameStr);
+                if (result == null) return BadRequest(new { message = "Failed to process image." });
 
-            return Ok(result);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message, detail = ex.InnerException?.Message });
+            }
         }
 
         [HttpPost("analyze/automatic")]
         [AllowAnonymous]
         public async Task<IActionResult> AnalyzeAutomatic([FromQuery] SupportedGame gameName)
         {
-            var userIdStr = User.FindFirst("UserId")?.Value;
-            int userId = 1; // Default to system user if not logged in
-            if (!string.IsNullOrEmpty(userIdStr)) int.TryParse(userIdStr, out userId);
+            try
+            {
+                var userIdStr = User.FindFirst("UserId")?.Value;
+                int userId = 1; // Default to system user if not logged in
+                if (!string.IsNullOrEmpty(userIdStr)) int.TryParse(userIdStr, out userId);
 
-            string gameNameStr = gameName == SupportedGame.VLTK_Mobile ? "VLTK Mobile" : "VLTK 2.0";
-            var result = await service.AnalyzeLatestFromCloudAsync(userId, gameNameStr);
-            if (result == null) return NotFound(new { message = "No image found in Cloudinary folder 'AirtestUpload' to process." });
+                string gameNameStr = gameName == SupportedGame.VLTK_Mobile ? "VLTK Mobile" : "VLTK 2.0";
+                var result = await service.AnalyzeLatestFromCloudAsync(userId, gameNameStr);
+                if (result == null) return NotFound(new { message = "No image found in Cloudinary folder 'AirtestUpload' to process." });
 
-            return Ok(result);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message, detail = ex.InnerException?.Message });
+            }
         }
 
         [HttpGet]
