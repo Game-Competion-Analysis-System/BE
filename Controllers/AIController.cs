@@ -40,7 +40,7 @@ namespace GameCompetionAnalysisSystem.Controllers
 
             string gameNameStr = gameName == SupportedGame.VLTK_Mobile ? "VLTK Mobile" : "VLTK 2.0";
             var result = await service.AnalyzeLatestFromCloudAsync(userId, gameNameStr);
-            if (result == null) return NotFound(new { message = "No new image found in Cloudinary folder 'HumanUpload' to process." });
+            if (result == null) return NotFound(new { message = "No new image found in Cloudinary folder 'AirtestUpload' to process." });
 
             return Ok(result);
         }
@@ -72,6 +72,14 @@ namespace GameCompetionAnalysisSystem.Controllers
             var result = await service.GetAnalysisResultAsync(id);
             if (result == null) return NotFound();
             return Ok(result);
+        }
+
+        [HttpGet("airtest-uploads")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetAirtestUploads()
+        {
+            var urls = await service.GetAirtestUploadImagesAsync();
+            return Ok(urls);
         }
 
         [HttpDelete("{id}")]

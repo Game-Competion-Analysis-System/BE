@@ -47,9 +47,9 @@ namespace DAL.Repository
             string? publicId = null;
             string? createdAt = null;
 
-            // 1. Try SEARCH API first - Get from "HumanUpload" folder
+            // 1. Try SEARCH API first - Get from "AirtestUpload" folder
             var searchResult = await _cloudinary.Search()
-                .Expression("folder:\"HumanUpload\" AND resource_type:image")
+                .Expression("folder:\"AirtestUpload\" AND resource_type:image")
                 .SortBy("created_at", "desc")
                 .MaxResults(1)
                 .ExecuteAsync();
@@ -64,11 +64,11 @@ namespace DAL.Repository
             else
             {
                 // 2. Fallback to ListResources
-                Console.WriteLine("Cloudinary: Search API returned 0 results for 'HumanUpload'. Trying ListResources fallback...");
+                Console.WriteLine("Cloudinary: Search API returned 0 results for 'AirtestUpload'. Trying ListResources fallback...");
                 var listParams = new ListResourcesByPrefixParams
                 {
                     Type = "upload",
-                    Prefix = "HumanUpload/",
+                    Prefix = "AirtestUpload/",
                     MaxResults = 1,
                     Direction = "desc"
                 };
@@ -444,6 +444,17 @@ namespace DAL.Repository
             
             await _context.SaveChangesAsync();
             return true;
+        }
+
+        public async Task<List<string>> GetAirtestUploadImagesAsync()
+        {
+            var result = await _cloudinary.Search()
+                .Expression("folder:\"AirtestUpload\" AND resource_type:image")
+                .SortBy("created_at", "desc")
+                .MaxResults(100)
+                .ExecuteAsync();
+
+            return result.Resources?.Select(r => r.SecureUrl?.ToString() ?? "").Where(url => !string.IsNullOrEmpty(url)).ToList() ?? [];
         }
 
         private async Task<MistralOcrResultDto> CallGroqOcr(IFormFile file)

@@ -120,5 +120,10 @@ namespace BIL.Service
         {
             return await repo.DeleteAsync(id);
         }
+
+        public async Task<List<string>> GetAirtestUploadImagesAsync()
+        {
+            return await repo.GetAirtestUploadImagesAsync();
+        }
     }
 }

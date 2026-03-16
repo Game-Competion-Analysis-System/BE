@@ -14,5 +14,6 @@ namespace BIL.Service
         Task<AnalysisResultDto?> GetByIdAsync(int id);
         Task<AnalysisResultDto?> GetAnalysisResultAsync(int id);
         Task<bool> DeleteAsync(int id);
+        Task<List<string>> GetAirtestUploadImagesAsync();
     }
 }

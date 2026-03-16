@@ -17,7 +17,8 @@ namespace DAL.Repository
         Task<Aianalysis?> GetByIdAsync(int id);
         Task<Aianalysis?> GetByIdWithDetailsAsync(int id);
         Task<bool> DeleteAsync(int id);
-    }
+         Task<List<string>> GetAirtestUploadImagesAsync();
+     }
 
 
 }
