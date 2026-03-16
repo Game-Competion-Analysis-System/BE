@@ -333,7 +333,7 @@ namespace DAL.Repository
 
         private async Task<MistralOcrResultDto> CallGroqOcrWithUrl(string imageUrl)
         {
-            var apiKey = _config["Groq:ApiKey"] ?? throw new Exception("Missing Groq API Key");
+            var apiKey = _config["Groq:ApiKey"]?.Trim() ?? throw new Exception("Missing Groq API Key");
 
             var promptText = "Bạn là một AI chuyên gia về OCR và phân tích dữ liệu game. " +
                 "NHIỆM VỤ: Đọc ảnh chụp màn hình bảng xếp hạng trong game (thường là VLTK Mobile hoặc VLTK 2.0). " +
@@ -502,7 +502,9 @@ namespace DAL.Repository
                 .MaxResults(100)
                 .ExecuteAsync();
 
-            return result.Resources?.Select(r => r.SecureUrl?.ToString() ?? "").Where(url => !string.IsNullOrEmpty(url)).ToList() ?? [];
+            if (result == null || result.Resources == null) return [];
+
+            return result.Resources.Select(r => r.SecureUrl?.ToString() ?? "").Where(url => !string.IsNullOrEmpty(url)).ToList();
         }
 
         private async Task<MistralOcrResultDto> CallGroqOcr(IFormFile file)

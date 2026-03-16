@@ -290,7 +290,7 @@ namespace BIL.Service
 
         private async Task<MistralOcrResultDto> CallGroqOcrWithUrl(HttpClient http, string imageUrl)
         {
-            var apiKey = _config["Groq:ApiKey"] ?? throw new Exception("Missing Groq API Key");
+            var apiKey = _config["Groq:ApiKey"]?.Trim() ?? throw new Exception("Missing Groq API Key");
             var promptText = "Bạn là một AI chuyên gia về OCR và phân tích dữ liệu game. " +
                 "NHIỆM VỤ: Đọc ảnh chụp màn hình bảng xếp hạng trong game (thường là VLTK Mobile hoặc VLTK 2.0). " +
                 "YÊU CẦU CHI TIẾT: " +
