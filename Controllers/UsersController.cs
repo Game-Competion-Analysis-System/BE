@@ -47,7 +47,7 @@ namespace GameCompetionAnalysisSystem.Controllers
         public IActionResult Delete(int id)
         {
             _service.Delete(id);
-            return Ok(new { message = "User deleted successfully" });
+            return Ok(new { message = "Delete successful" });
         }
     }
 }

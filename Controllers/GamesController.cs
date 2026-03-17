@@ -71,7 +71,7 @@ namespace GameCompetionAnalysisSystem.Controllers
             if (game == null) return NotFound();
 
             service.Delete(id);
-            return Ok(new { message = "Game deleted successfully" });
+            return Ok(new { message = "Delete successful" });
         }
 
     }

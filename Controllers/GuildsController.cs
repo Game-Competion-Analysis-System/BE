@@ -63,7 +63,7 @@ namespace GameCompetionAnalysisSystem.Controllers
         public IActionResult Delete(int id)
         {
             service.Delete(id);
-            return Ok(new { message = "Guild deleted successfully" });
+            return Ok(new { message = "Delete successful" });
         }
     }
 }

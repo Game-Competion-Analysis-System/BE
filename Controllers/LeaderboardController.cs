@@ -16,7 +16,7 @@ namespace GameCompetionAnalysisSystem.Controllers
         public async Task<IActionResult> ParseOcr(int analysisId)
         {
             await service.ProcessOcrAsync(analysisId);
-            return Ok("Parsed & saved leaderboard");
+            return Ok(new { message = "Parsed & saved leaderboard" });
         }
 
         [HttpGet("top/{n}")]
@@ -61,7 +61,7 @@ namespace GameCompetionAnalysisSystem.Controllers
         public async Task<IActionResult> Delete(int id)
         {
             await service.DeleteAsync(id);
-            return Ok(new { message = "Leaderboard deleted successfully" });
+            return Ok(new { message = "Delete successful" });
         }
     }
 

@@ -59,7 +59,7 @@ namespace GameCompetionAnalysisSystem.Controllers
         public IActionResult Delete(int id)
         {
             service.Delete(id);
-            return Ok(new { message = "Company deleted successfully" });
+            return Ok(new { message = "Delete successful" });
         }
     }
 }

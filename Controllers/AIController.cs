@@ -104,7 +104,7 @@ namespace GameCompetionAnalysisSystem.Controllers
         {
             var success = await service.DeleteAsync(id);
             if (!success) return NotFound();
-            return NoContent();
+            return Ok(new { message = "Delete successful" });
         }
     }
 }

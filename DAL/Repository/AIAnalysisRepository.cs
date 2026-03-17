@@ -447,9 +447,28 @@ namespace DAL.Repository
             var totalCount = await query.CountAsync();
 
             // Sorting
-            query = parameters.IsDescending 
-                ? query.OrderByDescending(a => a.Processedtime) 
-                : query.OrderBy(a => a.Processedtime);
+            if (!string.IsNullOrEmpty(parameters.SortBy))
+            {
+                switch (parameters.SortBy.ToLower())
+                {
+                    case "processedtime":
+                        query = parameters.IsDescending ? query.OrderByDescending(a => a.Processedtime) : query.OrderBy(a => a.Processedtime);
+                        break;
+                    case "gamename":
+                        // Sorting by GameName extracted field (complex)
+                        query = parameters.IsDescending 
+                            ? query.OrderByDescending(a => a.Aiextractedfields.Where(f => f.Fieldtype == "GameName").Select(f => f.Rawtext).FirstOrDefault())
+                            : query.OrderBy(a => a.Aiextractedfields.Where(f => f.Fieldtype == "GameName").Select(f => f.Rawtext).FirstOrDefault());
+                        break;
+                    default:
+                        query = parameters.IsDescending ? query.OrderByDescending(a => a.Processedtime) : query.OrderBy(a => a.Processedtime);
+                        break;
+                }
+            }
+            else
+            {
+                query = parameters.IsDescending ? query.OrderByDescending(a => a.Processedtime) : query.OrderBy(a => a.Processedtime);
+            }
 
             // Paging - Ensure Skip is never negative
             var items = await query
