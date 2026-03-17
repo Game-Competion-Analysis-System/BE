@@ -1,5 +1,6 @@
 using DAL.DTO;
 using DAL.Entities;
+using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -69,9 +70,32 @@ namespace DAL.Repository
 
         public void Delete(int id)
         {
-            var user = _context.Users.Find(id);
+            var user = _context.Users
+                .Include(u => u.Imageuploads)
+                    .ThenInclude(u => u.Aianalyses)
+                        .ThenInclude(a => a.Aiextractedfields)
+                .Include(u => u.Imageuploads)
+                    .ThenInclude(u => u.Aianalyses)
+                        .ThenInclude(a => a.Leaderboards)
+                            .ThenInclude(l => l.Leaderboardentries)
+                .FirstOrDefault(u => u.Userid == id);
+
             if (user != null)
             {
+                foreach (var upload in user.Imageuploads)
+                {
+                    foreach (var analysis in upload.Aianalyses)
+                    {
+                        foreach (var lb in analysis.Leaderboards)
+                        {
+                            _context.Leaderboardentries.RemoveRange(lb.Leaderboardentries);
+                        }
+                        _context.Leaderboards.RemoveRange(analysis.Leaderboards);
+                        _context.Aiextractedfields.RemoveRange(analysis.Aiextractedfields);
+                    }
+                    _context.Aianalyses.RemoveRange(upload.Aianalyses);
+                }
+                _context.Imageuploads.RemoveRange(user.Imageuploads);
                 _context.Users.Remove(user);
                 _context.SaveChanges();
             }
