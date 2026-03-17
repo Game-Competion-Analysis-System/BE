@@ -394,7 +394,7 @@ namespace DAL.Repository
             ) ?? throw new Exception("Failed to parse OCR result");
         }
 
-        public async Task<(List<Aianalysis> Items, int TotalCount)> GetAllAsync(QueryParameters parameters, int? userId = null)
+        public async Task<(List<Aianalysis> Items, int TotalCount)> GetAllAsync(AIQueryParameters parameters, int? userId = null)
         {
             var query = _context.Aianalyses
                 .Include(a => a.Upload)

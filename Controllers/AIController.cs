@@ -62,7 +62,7 @@ namespace GameCompetionAnalysisSystem.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetList([FromQuery] QueryParameters parameters)
+        public async Task<IActionResult> GetList([FromQuery] AIQueryParameters parameters)
         {
             var userIdStr = User.FindFirst("UserId")?.Value;
             if (string.IsNullOrEmpty(userIdStr) || !int.TryParse(userIdStr, out int userId))

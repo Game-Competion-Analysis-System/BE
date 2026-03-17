@@ -18,10 +18,12 @@ namespace DAL.DTO
 
         public string? SearchTerm { get; set; }
         public string? SortBy { get; set; }
-        public bool IsDescending { get; set; } = true; // Mặc định lấy cái mới nhất
+        public bool IsDescending { get; set; } = true;
         public string? Filter { get; set; } 
-        
-        // New Filter Fields
+    }
+
+    public class AIQueryParameters : QueryParameters
+    {
         public DateTime? StartDate { get; set; }
         public DateTime? EndDate { get; set; }
         public string? GameName { get; set; }

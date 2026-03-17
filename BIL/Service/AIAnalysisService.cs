@@ -29,7 +29,7 @@ namespace BIL.Service
             return await GetAnalysisResultAsync(analysis.Analysisid);
         }
 
-        public async Task<PagedResult<AnalysisResultDto>> GetHistoryAsync(int userId, string? role, QueryParameters parameters)
+        public async Task<PagedResult<AnalysisResultDto>> GetHistoryAsync(int userId, string? role, AIQueryParameters parameters)
         {
             int? filterUserId = (role?.ToLower() == "admin") ? null : userId;
             var (analyses, totalCount) = await repo.GetAllAsync(parameters, filterUserId);
