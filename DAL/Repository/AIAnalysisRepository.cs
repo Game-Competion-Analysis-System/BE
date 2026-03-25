@@ -559,23 +559,28 @@ namespace DAL.Repository
         {
             var query = _context.Aianalyses.AsQueryable();
 
-            if (userId.HasValue)
+            if (userId.HasValue && userId.Value > 0)
             {
                 query = query.Where(a => a.Upload != null && a.Upload.Userid == userId.Value);
             }
 
-            var data = await query
+            // Fetch data first, then format the date string in memory to avoid translation issues
+            var rawData = await query
                 .Where(a => a.Processedtime.HasValue)
                 .GroupBy(a => a.Processedtime!.Value.Date)
-                .Select(g => new HeatmapDto
+                .Select(g => new
                 {
-                    Date = g.Key.ToString("yyyy-MM-dd"),
+                    Date = g.Key,
                     Count = g.Count()
                 })
                 .OrderBy(d => d.Date)
                 .ToListAsync();
 
-            return data;
+            return rawData.Select(d => new HeatmapDto
+            {
+                Date = d.Date.ToString("yyyy-MM-dd"),
+                Count = d.Count
+            }).ToList();
         }
 
         private async Task<MistralOcrResultDto> CallGroqOcr(IFormFile file)

@@ -102,14 +102,21 @@ namespace GameCompetionAnalysisSystem.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> GetHeatmap()
         {
-            var userIdStr = User.FindFirst("UserId")?.Value;
-            int userId = 0;
-            if (!string.IsNullOrEmpty(userIdStr)) int.TryParse(userIdStr, out userId);
-            
-            var role = User.FindFirst(ClaimTypes.Role)?.Value;
-            
-            var data = await service.GetHeatmapDataAsync(userId, role);
-            return Ok(data);
+            try
+            {
+                var userIdStr = User.FindFirst("UserId")?.Value;
+                int userId = 0;
+                if (!string.IsNullOrEmpty(userIdStr)) int.TryParse(userIdStr, out userId);
+                
+                var role = User.FindFirst(ClaimTypes.Role)?.Value;
+                
+                var data = await service.GetHeatmapDataAsync(userId, role);
+                return Ok(data);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message, detail = ex.InnerException?.Message });
+            }
         }
 
         [HttpDelete("{id}")]
