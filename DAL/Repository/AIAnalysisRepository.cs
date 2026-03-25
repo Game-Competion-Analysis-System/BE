@@ -555,9 +555,32 @@ namespace DAL.Repository
             return result.Resources.Select(r => r.SecureUrl?.ToString() ?? "").Where(url => !string.IsNullOrEmpty(url)).ToList();
         }
 
+        public async Task<List<HeatmapDto>> GetHeatmapDataAsync(int? userId = null)
+        {
+            var query = _context.Aianalyses.AsQueryable();
+
+            if (userId.HasValue)
+            {
+                query = query.Where(a => a.Upload != null && a.Upload.Userid == userId.Value);
+            }
+
+            var data = await query
+                .Where(a => a.Processedtime.HasValue)
+                .GroupBy(a => a.Processedtime!.Value.Date)
+                .Select(g => new HeatmapDto
+                {
+                    Date = g.Key.ToString("yyyy-MM-dd"),
+                    Count = g.Count()
+                })
+                .OrderBy(d => d.Date)
+                .ToListAsync();
+
+            return data;
+        }
+
         private async Task<MistralOcrResultDto> CallGroqOcr(IFormFile file)
         {
-            var apiKey = _config["Groq:ApiKey"] ?? throw new Exception("Missing Groq API Key");
+            var apiKey = _config["Groq:ApiKey"]?.Trim() ?? throw new Exception("Missing Groq API Key");
 
             using var ms = new MemoryStream();
             await file.CopyToAsync(ms);

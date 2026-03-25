@@ -54,20 +54,17 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-builder.Services.AddHttpClient<IAIAnalysisService, AIAnalysisService>((sp, client) =>
+builder.Services.AddHttpClient<IAIAnalysisRepository, AIAnalysisRepository>((sp, client) =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
-    var apiKey = config["Groq:ApiKey"];
+    var apiKey = config["Groq:ApiKey"]?.Trim();
 
     client.BaseAddress = new Uri("https://api.groq.com/openai/v1/");
     client.DefaultRequestHeaders.Authorization =
         new AuthenticationHeaderValue("Bearer", apiKey);
-});
-
-builder.Services.AddHttpClient<IAIAnalysisRepository, AIAnalysisRepository>(client =>
-{
     client.Timeout = TimeSpan.FromMinutes(10);
 });
+
 builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();
 builder.Services.AddScoped<ILeaderboardRepository, LeaderboardRepository>();
 

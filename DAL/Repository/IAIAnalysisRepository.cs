@@ -18,6 +18,7 @@ namespace DAL.Repository
         Task<Aianalysis?> GetByIdWithDetailsAsync(int id);
         Task<bool> DeleteAsync(int id);
          Task<List<string>> GetAirtestUploadImagesAsync();
+         Task<List<HeatmapDto>> GetHeatmapDataAsync(int? userId = null);
      }
 
 

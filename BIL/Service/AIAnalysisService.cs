@@ -117,5 +117,11 @@ namespace BIL.Service
         {
             return await repo.GetAirtestUploadImagesAsync();
         }
+
+        public async Task<List<HeatmapDto>> GetHeatmapDataAsync(int userId, string? role)
+        {
+            int? filterUserId = (role?.ToLower() == "admin") ? null : userId;
+            return await repo.GetHeatmapDataAsync(filterUserId);
+        }
     }
 }

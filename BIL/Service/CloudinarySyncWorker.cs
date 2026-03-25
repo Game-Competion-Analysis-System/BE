@@ -44,41 +44,45 @@ namespace BIL.Service
                     var dbContext = scope.ServiceProvider.GetRequiredService<Swd392GameAiContext>();
                     var httpClient = scope.ServiceProvider.GetRequiredService<HttpClient>();
 
-                    // 1. Fetch Latest Image from Cloudinary - Worker uses "AirtestUpload" folder
-                    string? imageUrl = null;
-                    string? publicId = null;
+                    // 1. Fetch Images from Cloudinary - Worker uses "AirtestUpload" folder
+                    var allLatest = new List<(string imageUrl, string publicId)>();
 
                     var searchResult = await _cloudinary.Search()
                         .Expression("folder:\"AirtestUpload\" AND resource_type:image")
                         .SortBy("created_at", "desc")
-                        .MaxResults(1)
+                        .MaxResults(50) // Lấy tối đa 50 ảnh mới nhất để kiểm tra
                         .ExecuteAsync();
 
-                    var searchLatest = searchResult.Resources?.FirstOrDefault();
-                    if (searchLatest != null)
+                    if (searchResult.Resources != null)
                     {
-                        imageUrl = searchLatest.SecureUrl?.ToString();
-                        publicId = searchLatest.PublicId;
+                        foreach (var res in searchResult.Resources)
+                        {
+                            if (!string.IsNullOrEmpty(res.SecureUrl?.ToString()) && !string.IsNullOrEmpty(res.PublicId))
+                                allLatest.Add((res.SecureUrl.ToString(), res.PublicId));
+                        }
                     }
-                    else
+
+                    if (allLatest.Count == 0)
                     {
                         var listParams = new ListResourcesByPrefixParams
                         {
                             Type = "upload",
                             Prefix = "AirtestUpload/",
-                            MaxResults = 1,
+                            MaxResults = 50,
                             Direction = "desc"
                         };
                         var listResources = await _cloudinary.ListResourcesAsync(listParams);
-                        var listLatest = listResources.Resources?.FirstOrDefault();
-                        if (listLatest != null)
+                        if (listResources.Resources != null)
                         {
-                            imageUrl = listLatest.SecureUrl?.ToString();
-                            publicId = listLatest.PublicId;
+                            foreach (var res in listResources.Resources)
+                            {
+                                if (!string.IsNullOrEmpty(res.SecureUrl?.ToString()) && !string.IsNullOrEmpty(res.PublicId))
+                                    allLatest.Add((res.SecureUrl.ToString(), res.PublicId));
+                            }
                         }
                     }
 
-                    if (!string.IsNullOrEmpty(imageUrl))
+                    foreach (var (imageUrl, publicId) in allLatest)
                     {
                         // 2. Check if already processed
                         var exists = await dbContext.Imageuploads.AnyAsync(u => u.Imageurl == imageUrl, stoppingToken);
@@ -88,6 +92,9 @@ namespace BIL.Service
                             
                             // 3. Process the new image
                             await ProcessNewImageAsync(dbContext, httpClient, imageUrl);
+                            
+                            // Sau mỗi ảnh nên lưu lại database để tránh xử lý trùng nếu lỗi giữa chừng
+                            await dbContext.SaveChangesAsync(stoppingToken);
                         }
                     }
                 }
@@ -291,6 +298,10 @@ namespace BIL.Service
         private async Task<MistralOcrResultDto> CallGroqOcrWithUrl(HttpClient http, string imageUrl)
         {
             var apiKey = _config["Groq:ApiKey"]?.Trim() ?? throw new Exception("Missing Groq API Key");
+            
+            // Log 10 ký tự đầu của API Key để kiểm tra (không log hết để bảo mật)
+            _logger.LogInformation("Using Groq API Key starting with: {Prefix}...", apiKey.Substring(0, Math.Min(apiKey.Length, 10)));
+            
             var promptText = "Bạn là một AI chuyên gia về OCR và phân tích dữ liệu game. " +
                 "NHIỆM VỤ: Đọc ảnh chụp màn hình bảng xếp hạng trong game (thường là VLTK Mobile hoặc VLTK 2.0). " +
                 "YÊU CẦU CHI TIẾT: " +
