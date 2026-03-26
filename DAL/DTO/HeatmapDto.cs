@@ -14,20 +14,6 @@ namespace DAL.DTO
     {
         public int PlayerId { get; set; }
         public string PlayerName { get; set; } = string.Empty;
-    }
-
-    public class HeatmapPlayerDtoComparer : IEqualityComparer<HeatmapPlayerDto>
-    {
-        public bool Equals(HeatmapPlayerDto? x, HeatmapPlayerDto? y)
-        {
-            if (ReferenceEquals(x, y)) return true;
-            if (x is null || y is null) return false;
-            return x.PlayerId == y.PlayerId;
-        }
-
-        public int GetHashCode([DisallowNull] HeatmapPlayerDto obj)
-        {
-            return obj.PlayerId.GetHashCode();
-        }
+        public string Time { get; set; } = string.Empty;
     }
 }

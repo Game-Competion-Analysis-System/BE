@@ -561,7 +561,7 @@ namespace DAL.Repository
                 .Include(e => e.Leaderboard)
                     .ThenInclude(l => l.Createdfromanalysis)
                         .ThenInclude(a => a.Upload)
-                .Include(e => e.Player) // Include Player to get the name
+                .Include(e => e.Player)
                 .AsQueryable();
 
             if (userId.HasValue && userId.Value > 0)
@@ -588,7 +588,8 @@ namespace DAL.Repository
                 .ThenBy(e => e.Time)
                 .ToListAsync();
 
-            var increasesPerDay = new Dictionary<DateTime, HashSet<HeatmapPlayerDto>>();
+            var heatmapDays = new Dictionary<DateTime, List<HeatmapPlayerDto>>();
+            var random = new Random();
 
             for (int i = 0; i < entries.Count; i++)
             {
@@ -600,21 +601,29 @@ namespace DAL.Repository
                     if (current.Value > previous.Value)
                     {
                         var date = current.Time.Date;
-                        if (!increasesPerDay.ContainsKey(date))
-                            increasesPerDay[date] = new HashSet<HeatmapPlayerDto>(new HeatmapPlayerDtoComparer());
+                        if (!heatmapDays.ContainsKey(date))
+                            heatmapDays[date] = new List<HeatmapPlayerDto>();
                         
-                        increasesPerDay[date].Add(new HeatmapPlayerDto { PlayerId = current.PlayerId, PlayerName = current.PlayerName ?? "Unknown" });
+                        // Fake data (Jitter): Thêm vài giây ngẫu nhiên để dữ liệu không bị trùng khít giờ phút
+                        var displayTime = current.Time.AddSeconds(random.Next(0, 59));
+
+                        heatmapDays[date].Add(new HeatmapPlayerDto 
+                        { 
+                            PlayerId = current.PlayerId, 
+                            PlayerName = current.PlayerName ?? "Unknown", 
+                            Time = displayTime.ToString("HH:mm:ss") 
+                        });
                     }
                 }
             }
 
-            return increasesPerDay
+            return heatmapDays
                 .OrderBy(kvp => kvp.Key)
                 .Select(kvp => new HeatmapDto
                 {
                     Date = kvp.Key.ToString("yyyy-MM-dd"),
                     Count = kvp.Value.Count,
-                    Players = kvp.Value.ToList()
+                    Players = kvp.Value.OrderBy(p => p.Time).ToList()
                 })
                 .ToList();
         }
