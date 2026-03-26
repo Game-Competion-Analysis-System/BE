@@ -49,5 +49,26 @@ namespace BIL.Service
         }
 
         public void Delete(int id) => repo.Delete(id);
+
+        public UserDto Create(CreateUserDto dto)
+        {
+            var user = new User
+            {
+                Username = dto.Username,
+                Email = dto.Email,
+                Passwordhash = dto.Password, // In a real app, hash this!
+                Role = dto.Role ?? "user"
+            };
+
+            repo.Add(user);
+            
+            return new UserDto
+            {
+                UserId = user.Userid,
+                Username = user.Username,
+                Email = user.Email,
+                Role = user.Role
+            };
+        }
     }
 }

@@ -48,7 +48,7 @@ public class AuthController(IAuthService authService, Swd392GameAiContext contex
             Username = request.Username,
             Email = request.Email,
             Passwordhash = request.Password, // In a real app, hash this!
-            Role = request.Role ?? "user"
+            Role = "user" // Luôn là user khi tự đăng ký
         };
 
         _context.Users.Add(newUser);
@@ -69,5 +69,4 @@ public class RegisterRequest
     public string Username { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
-    public string? Role { get; set; }
 }

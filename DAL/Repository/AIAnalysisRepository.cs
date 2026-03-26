@@ -557,30 +557,66 @@ namespace DAL.Repository
 
         public async Task<List<HeatmapDto>> GetHeatmapDataAsync(int? userId = null)
         {
-            var query = _context.Aianalyses.AsQueryable();
+            var query = _context.Leaderboardentries
+                .Include(e => e.Leaderboard)
+                    .ThenInclude(l => l.Createdfromanalysis)
+                        .ThenInclude(a => a.Upload)
+                .Include(e => e.Player) // Include Player to get the name
+                .AsQueryable();
 
             if (userId.HasValue && userId.Value > 0)
             {
-                query = query.Where(a => a.Upload != null && a.Upload.Userid == userId.Value);
+                query = query.Where(e => e.Leaderboard != null && 
+                                         e.Leaderboard.Createdfromanalysis != null && 
+                                         e.Leaderboard.Createdfromanalysis.Upload != null && 
+                                         e.Leaderboard.Createdfromanalysis.Upload.Userid == userId.Value);
             }
 
-            // Fetch data first, then format the date string in memory to avoid translation issues
-            var rawData = await query
-                .Where(a => a.Processedtime.HasValue)
-                .GroupBy(a => a.Processedtime!.Value.Date)
-                .Select(g => new
+            var entries = await query
+                .Where(e => e.Playerid.HasValue && e.Player != null && e.Value.HasValue && 
+                            e.Leaderboard != null && 
+                            e.Leaderboard.Createdfromanalysis != null && 
+                            e.Leaderboard.Createdfromanalysis.Processedtime.HasValue)
+                .Select(e => new
                 {
-                    Date = g.Key,
-                    Count = g.Count()
+                    PlayerId = e.Playerid!.Value,
+                    PlayerName = e.Player!.Playername,
+                    Value = e.Value!.Value,
+                    Time = e.Leaderboard!.Createdfromanalysis!.Processedtime!.Value
                 })
-                .OrderBy(d => d.Date)
+                .OrderBy(e => e.PlayerId)
+                .ThenBy(e => e.Time)
                 .ToListAsync();
 
-            return rawData.Select(d => new HeatmapDto
+            var increasesPerDay = new Dictionary<DateTime, HashSet<HeatmapPlayerDto>>();
+
+            for (int i = 0; i < entries.Count; i++)
             {
-                Date = d.Date.ToString("yyyy-MM-dd"),
-                Count = d.Count
-            }).ToList();
+                var current = entries[i];
+                
+                if (i > 0 && entries[i - 1].PlayerId == current.PlayerId)
+                {
+                    var previous = entries[i - 1];
+                    if (current.Value > previous.Value)
+                    {
+                        var date = current.Time.Date;
+                        if (!increasesPerDay.ContainsKey(date))
+                            increasesPerDay[date] = new HashSet<HeatmapPlayerDto>(new HeatmapPlayerDtoComparer());
+                        
+                        increasesPerDay[date].Add(new HeatmapPlayerDto { PlayerId = current.PlayerId, PlayerName = current.PlayerName ?? "Unknown" });
+                    }
+                }
+            }
+
+            return increasesPerDay
+                .OrderBy(kvp => kvp.Key)
+                .Select(kvp => new HeatmapDto
+                {
+                    Date = kvp.Key.ToString("yyyy-MM-dd"),
+                    Count = kvp.Value.Count,
+                    Players = kvp.Value.ToList()
+                })
+                .ToList();
         }
 
         private async Task<MistralOcrResultDto> CallGroqOcr(IFormFile file)

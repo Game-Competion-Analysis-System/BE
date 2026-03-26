@@ -68,6 +68,12 @@ namespace DAL.Repository
             _context.SaveChanges();
         }
 
+        public void Add(User user)
+        {
+            _context.Users.Add(user);
+            _context.SaveChanges();
+        }
+
         public void Delete(int id)
         {
             var user = _context.Users

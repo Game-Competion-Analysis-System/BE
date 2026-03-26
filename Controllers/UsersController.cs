@@ -19,6 +19,13 @@ namespace GameCompetionAnalysisSystem.Controllers
         [Authorize(Roles = "admin")]
         public IActionResult GetList([FromQuery] QueryParameters parameters) => Ok(_service.GetAll(parameters));
 
+        [HttpPost]
+        [Authorize(Roles = "admin")]
+        public IActionResult Create([FromBody] CreateUserDto userDto)
+        {
+            return Ok(_service.Create(userDto));
+        }
+
         [HttpGet("profile")]
         public IActionResult GetProfile()
         {

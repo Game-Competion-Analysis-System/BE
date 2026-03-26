@@ -11,5 +11,6 @@ namespace BIL.Service
         void Update(User user);
         void UpdateProfile(int userId, UpdateProfileDto dto);
         void Delete(int id);
+        UserDto Create(CreateUserDto dto);
     }
 }
