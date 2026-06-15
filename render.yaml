@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: game-analysis-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: ConnectionStrings__DefaultConnection
+        sync: false
+      - key: Groq__ApiKey
+        sync: false
+            

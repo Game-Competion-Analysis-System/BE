@@ -1,56 +1,79 @@
-using GameCompetionAnalysisSystem.Models;
-using GameCompetionAnalysisSystem.Services;
+using BIL.Service;
+using DAL.DTO;
+using DAL.Entities;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GameCompetionAnalysisSystem.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class GamesController : ControllerBase
+    [Authorize]
+    public class GamesController(IGameService service) : ControllerBase
     {
-        private readonly IGameService _service;
-
-        public GamesController(IGameService service)
-        {
-            _service = service;
-        }
-
         [HttpGet]
-        public IActionResult GetAll() => Ok(_service.GetAllGames());
+        [AllowAnonymous]
+        public IActionResult GetList([FromQuery] QueryParameters parameters) => Ok(service.GetAllGames(parameters));
 
+        [HttpGet("search")]
+        [AllowAnonymous]
+        public IActionResult Search([FromQuery] string name) => Ok(service.SearchByName(name));
+
+        //Get by ID
         [HttpGet("{id}")]
+        [AllowAnonymous]
         public IActionResult GetById(int id)
         {
-            var game = _service.GetById(id);
+            var game = service.GetById(id);
             if (game == null) return NotFound();
             return Ok(game);
         }
-
+        //Create Game
         [HttpPost]
+        [Authorize(Roles = "admin")]
         public IActionResult Create(Game game)
         {
-            _service.Add(game);
-            return Ok(game);
+            service.Add(game);
+            return Ok(new GameDto
+            {
+                GameId = game.Gameid,
+                GameName = game.Gamename,
+                Genre = game.Genre
+            });
         }
 
-        [HttpGet("mmorpg")]
-        public IActionResult GetMMORPG() => Ok(_service.GetMMORPGGames());
 
+        [HttpGet("mmorpg")]
+        [AllowAnonymous]
+        public IActionResult GetMMORPG()
+            => Ok(service.GetMMORPGGames());
+
+        //Update
         [HttpPut("{id}")]
+        [Authorize(Roles = "admin")]
         public IActionResult Update(int id, [FromBody] Game game)
         {
             game.Gameid = id;
-            _service.Update(game);
-            return Ok(game);
+            service.Update(game);
+            return Ok(new GameDto
+            {
+                GameId = game.Gameid,
+                GameName = game.Gamename,
+                Genre = game.Genre
+            });
         }
-
+        //Delete
         [HttpDelete("{id}")]
+        [Authorize(Roles = "admin")]
         public IActionResult Delete(int id)
         {
-            var game = _service.GetById(id);
+            var game = service.GetById(id);
             if (game == null) return NotFound();
-            _service.Delete(id);
-            return Ok(new { message = "Game deleted successfully" });
+
+            service.Delete(id);
+            return Ok(new { message = "Delete successful" });
         }
+
     }
+
 }

@@ -1,62 +1,6 @@
 @GameCompetionAnalysisSystem_HostAddress = http://localhost:5088
 
-### Extract text from image (English)
-# curl -X POST "http://localhost:5088/api/ai/analyze?language=eng" \
-#      -F "file=@C:/path/to/screenshot.png"
-
-POST {{GameCompetionAnalysisSystem_HostAddress}}/api/ai/analyze?language=eng
-Content-Type: multipart/form-data; boundary=boundary
-
---boundary
-Content-Disposition: form-data; name="file"; filename="screenshot.png"
-Content-Type: image/png
-
-< ./screenshot.png
---boundary--
-
-###
-
-### Extract text from image (Vietnamese)
-# curl -X POST "http://localhost:5088/api/ai/analyze?language=vie" \
-#      -F "file=@C:/path/to/screenshot.png"
-
-POST {{GameCompetionAnalysisSystem_HostAddress}}/api/ai/analyze?language=vie
-Content-Type: multipart/form-data; boundary=boundary
-
---boundary
-Content-Disposition: form-data; name="file"; filename="screenshot.png"
-Content-Type: image/png
-
-< ./screenshot.png
---boundary--
-
-###
-
-### Get all games
-GET {{GameCompetionAnalysisSystem_HostAddress}}/api/games
+GET {{GameCompetionAnalysisSystem_HostAddress}}/weatherforecast/
 Accept: application/json
-
-###
-
-### Create a game
-POST {{GameCompetionAnalysisSystem_HostAddress}}/api/games
-Content-Type: application/json
-
-{
-  "name": "League of Legends",
-  "genre": "MMORPG",
-  "publisher": "Riot Games"
-}
-
-###
-
-### Get top 10 leaderboard
-GET {{GameCompetionAnalysisSystem_HostAddress}}/api/leaderboard/top/10
-Accept: application/json
-
-###
-
-### Parse OCR result into leaderboard
-POST {{GameCompetionAnalysisSystem_HostAddress}}/api/leaderboard/from-ocr/1
 
 ###
