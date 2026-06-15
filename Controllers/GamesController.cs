@@ -1,5 +1,5 @@
-﻿using BIL.Service;
-using DAL.Entities;
+using GameCompetionAnalysisSystem.Models;
+using GameCompetionAnalysisSystem.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GameCompetionAnalysisSystem.Controllers
@@ -16,10 +16,8 @@ namespace GameCompetionAnalysisSystem.Controllers
         }
 
         [HttpGet]
-        public IActionResult GetAll()
-            => Ok(_service.GetAllGames());
+        public IActionResult GetAll() => Ok(_service.GetAllGames());
 
-        //Get by ID
         [HttpGet("{id}")]
         public IActionResult GetById(int id)
         {
@@ -27,7 +25,7 @@ namespace GameCompetionAnalysisSystem.Controllers
             if (game == null) return NotFound();
             return Ok(game);
         }
-        //Create Game
+
         [HttpPost]
         public IActionResult Create(Game game)
         {
@@ -35,12 +33,9 @@ namespace GameCompetionAnalysisSystem.Controllers
             return Ok(game);
         }
 
-
         [HttpGet("mmorpg")]
-        public IActionResult GetMMORPG()
-            => Ok(_service.GetMMORPGGames());
+        public IActionResult GetMMORPG() => Ok(_service.GetMMORPGGames());
 
-        //Update
         [HttpPut("{id}")]
         public IActionResult Update(int id, [FromBody] Game game)
         {
@@ -48,17 +43,14 @@ namespace GameCompetionAnalysisSystem.Controllers
             _service.Update(game);
             return Ok(game);
         }
-        //Delete
+
         [HttpDelete("{id}")]
         public IActionResult Delete(int id)
         {
             var game = _service.GetById(id);
             if (game == null) return NotFound();
-
             _service.Delete(id);
             return Ok(new { message = "Game deleted successfully" });
         }
-
     }
-
 }

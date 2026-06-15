@@ -1,6 +1,4 @@
-﻿
-using Microsoft.EntityFrameworkCore;
-using BIL.Service;
+using GameCompetionAnalysisSystem.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GameCompetionAnalysisSystem.Controllers
@@ -29,6 +27,4 @@ namespace GameCompetionAnalysisSystem.Controllers
             return Ok(await _service.GetTopAsync(n));
         }
     }
-
-
 }

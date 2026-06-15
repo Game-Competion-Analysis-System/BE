@@ -1,7 +1,4 @@
-using BIL.Service;
-using DAL.Entities;
-using DAL.Repository;
-using System.Net.Http.Headers;
+using GameCompetionAnalysisSystem.Services;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -11,32 +8,18 @@ builder.Services.AddControllers()
     {
         opt.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
     });
-builder.Services.AddHttpClient<IAIAnalysisService, AIAnalysisService>((sp, client) =>
-{
-    var config = sp.GetRequiredService<IConfiguration>();
-    var apiKey = config["Mistral:ApiKey"];
 
-    client.BaseAddress = new Uri("https://api.mistral.ai/");
-    client.DefaultRequestHeaders.Authorization =
-        new AuthenticationHeaderValue("Bearer", apiKey);
+// OCR service — calls the external HuggingFace OCR API
+builder.Services.AddHttpClient<IOcrService, OcrService>(client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(2);
 });
 
-builder.Services.AddHttpClient<IAIAnalysisRepository, AIAnalysisRepository>(client =>
-{
-    client.Timeout = TimeSpan.FromMinutes(10);
-});
-builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();
-builder.Services.AddScoped<ILeaderboardRepository, LeaderboardRepository>();
+builder.Services.AddSingleton<IGameService, GameService>();
+builder.Services.AddSingleton<ILeaderboardService, LeaderboardService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-
-builder.Services.AddDbContext<PostgresContext>();
-builder.Services.AddScoped<IAIAnalysisRepository, AIAnalysisRepository>();
-builder.Services.AddScoped<IAIAnalysisService, AIAnalysisService>();
-
-builder.Services.AddScoped<IGameRepository, GameRepository>();
-builder.Services.AddScoped<IGameService, GameService>();
 
 var app = builder.Build();
 
