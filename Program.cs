@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json.Serialization;
 
@@ -54,15 +53,14 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-builder.Services.AddHttpClient<IAIAnalysisRepository, AIAnalysisRepository>((sp, client) =>
+builder.Services.AddHttpClient<IAIAnalysisRepository, AIAnalysisRepository>(client =>
 {
-    var config = sp.GetRequiredService<IConfiguration>();
-    var apiKey = config["Groq:ApiKey"]?.Trim();
+    client.Timeout = TimeSpan.FromMinutes(5);
+});
 
-    client.BaseAddress = new Uri("https://api.groq.com/openai/v1/");
-    client.DefaultRequestHeaders.Authorization =
-        new AuthenticationHeaderValue("Bearer", apiKey);
-    client.Timeout = TimeSpan.FromMinutes(10);
+builder.Services.AddHttpClient("OcrClient", client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(5);
 });
 
 builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();

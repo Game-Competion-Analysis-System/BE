@@ -7,8 +7,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace DAL.Repository
 {
@@ -23,17 +23,17 @@ namespace DAL.Repository
                 config["Cloudinary:ApiSecret"]
             ));
         private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
+        private const string OcrEndpoint = "https://hxvf123-demoocrserver.hf.space/api/v1/extract?language=eng";
 
         public async Task<Aianalysis> ProcessScreenshotAsync(IFormFile file, int userId, string gameName)
         {
-            // 1. Upload to Cloudinary (Step 3-4) - Manual upload goes to "AI upload"
             var uploadParams = new ImageUploadParams
             {
                 File = new FileDescription(file.FileName, file.OpenReadStream()),
                 Folder = "AI upload"
             };
             var uploadResult = await _cloudinary.UploadAsync(uploadParams);
-            
+
             if (uploadResult.Error != null)
                 throw new Exception($"Cloudinary upload failed: {uploadResult.Error.Message}");
 
@@ -47,7 +47,6 @@ namespace DAL.Repository
             string? publicId = null;
             string? createdAt = null;
 
-            // 1. Try SEARCH API first - Get from "AirtestUpload" folder
             var searchResult = await _cloudinary.Search()
                 .Expression("folder:\"AirtestUpload\" AND resource_type:image")
                 .SortBy("created_at", "desc")
@@ -63,7 +62,6 @@ namespace DAL.Repository
             }
             else
             {
-                // 2. Fallback to ListResources
                 Console.WriteLine("Cloudinary: Search API returned 0 results for 'AirtestUpload'. Trying ListResources fallback...");
                 var listParams = new ListResourcesByPrefixParams
                 {
@@ -88,7 +86,6 @@ namespace DAL.Repository
                 return null;
             }
 
-            // CHECK IF ALREADY PROCESSED - If exists, return the latest analysis for this image
             var existingUpload = await _context.Imageuploads
                 .Include(u => u.Aianalyses)
                 .FirstOrDefaultAsync(u => u.Imageurl == imageUrl);
@@ -101,14 +98,11 @@ namespace DAL.Repository
             }
 
             Console.WriteLine($"Cloudinary: Found latest image! PublicID: {publicId}, CreatedAt: {createdAt}, URL: {imageUrl}");
-
-            // 3. Run analysis flow
             return await ExecuteAnalysisFlow(imageUrl, userId, gameName);
         }
 
         private async Task<Aianalysis> ExecuteAnalysisFlow(string imageUrl, int userId, string gameName)
         {
-            // 2. Add ImageUpload with Status = "Pending"
             var upload = new Imageupload
             {
                 Userid = userId,
@@ -120,202 +114,183 @@ namespace DAL.Repository
             await _context.SaveChangesAsync();
 
             Aianalysis? analysis = null;
-            try 
+            try
             {
-                // 3. Call AI OCR
-                var ocr = await CallGroqOcrWithUrl(imageUrl);
+                // Call OCR API
+                var ocr = await CallHfOcrWithUrl(imageUrl);
 
-                // 4. Add AIAnalysis
+                var avgConfidence = ocr.TextBlocks.Count > 0
+                    ? ocr.TextBlocks.Average(b => b.Confidence) / 100.0
+                    : 0.5;
+
                 analysis = new Aianalysis
                 {
                     Uploadid = upload.Uploadid,
-                    Aimodelversion = "meta-llama/llama-4-scout-17b-16e-instruct",
-                    Confidencescore = ocr.Confidence,
+                    Aimodelversion = "hf-ocr-server-v1",
+                    Confidencescore = avgConfidence,
                     Processedtime = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified)
                 };
                 _context.Aianalyses.Add(analysis);
                 await _context.SaveChangesAsync();
 
-                // 5. Try to parse structured content if available
-                var content = ocr.Choices?.FirstOrDefault()?.Message?.Content;
-                if (string.IsNullOrEmpty(content))
-                {
-                    throw new Exception("AI returned empty content");
-                }
-                
-                // Robust JSON extraction
-                string jsonContent = content;
-                var startIdx = content.IndexOf('{');
-                var endIdx = content.LastIndexOf('}');
-                
-                if (startIdx != -1 && endIdx != -1 && endIdx > startIdx)
-                {
-                    jsonContent = content.Substring(startIdx, endIdx - startIdx + 1);
-                }
+                if (string.IsNullOrWhiteSpace(ocr.FullText) && ocr.TextBlocks.Count == 0)
+                    throw new Exception("OCR returned no text content");
 
-                try 
+                // Store raw OCR text
+                var rawText = ocr.FullText ?? "";
+                _context.Aiextractedfields.Add(new Aiextractedfield
                 {
-                    using var data = JsonDocument.Parse(jsonContent, new JsonDocumentOptions { AllowTrailingCommas = true });
-                    var root = data.RootElement;
+                    Analysisid = analysis.Analysisid,
+                    Rawtext = rawText.Length > 500 ? rawText[..500] : rawText,
+                    Fieldtype = "RawText",
+                    Confidence = avgConfidence
+                });
 
-                    // Cache for current request to avoid redundant queries
-                    Dictionary<string, Game> gameCache = [];
-                    Dictionary<string, Server> serverCache = [];
-                    Dictionary<string, Guild> guildCache = [];
-                    Dictionary<string, Player> playerCache = [];
+                // Parse structured game data from OCR
+                var gameData = ParseOcrToGameData(ocr, gameName);
 
-                    // 1. Get Game from Parameter (User choice)
-                    var targetGame = await _context.Games.FirstOrDefaultAsync(g => g.Gamename == gameName);
-                    if (targetGame != null)
+                Dictionary<string, Server> serverCache = [];
+                Dictionary<string, Guild> guildCache = [];
+                Dictionary<string, Player> playerCache = [];
+
+                // 1. Resolve Game
+                var targetGame = await _context.Games.FirstOrDefaultAsync(g => g.Gamename == gameName);
+                if (targetGame != null)
+                    _context.Aiextractedfields.Add(new Aiextractedfield
                     {
-                        gameCache[gameName] = targetGame;
-                        _context.Aiextractedfields.Add(new Aiextractedfield { Analysisid = analysis.Analysisid, Rawtext = gameName, Fieldtype = "GameName", Confidence = 1.0 });
+                        Analysisid = analysis.Analysisid,
+                        Rawtext = gameName,
+                        Fieldtype = "GameName",
+                        Confidence = 1.0
+                    });
+
+                // 2. Resolve Server
+                Server? targetServer = null;
+                if (!string.IsNullOrEmpty(gameData.ServerName))
+                {
+                    targetServer = await _context.Servers.FirstOrDefaultAsync(s =>
+                        s.Servername == gameData.ServerName &&
+                        (targetGame == null || s.Gameid == targetGame.Gameid));
+
+                    if (targetServer == null)
+                    {
+                        targetServer = new Server { Servername = gameData.ServerName, Game = targetGame };
+                        _context.Servers.Add(targetServer);
+                        await _context.SaveChangesAsync();
                     }
-
-                    // 2. Extract Server Name
-                    Server? targetServer = null;
-                    string? sn = null;
-                    if (root.TryGetProperty("server_name", out var sElem)) sn = sElem.GetString();
-
-                    if (!string.IsNullOrEmpty(sn))
+                    serverCache[gameData.ServerName] = targetServer;
+                    _context.Aiextractedfields.Add(new Aiextractedfield
                     {
-                        targetServer = await _context.Servers.FirstOrDefaultAsync(s => s.Servername == sn && (targetGame == null || s.Gameid == targetGame.Gameid));
-                        if (targetServer == null)
+                        Analysisid = analysis.Analysisid,
+                        Rawtext = gameData.ServerName,
+                        Fieldtype = "ServerName",
+                        Confidence = 0.90
+                    });
+                }
+
+                // 3. Resolve Event
+                Event? targetEvent = null;
+                if (!string.IsNullOrEmpty(gameData.EventName))
+                {
+                    targetEvent = await _context.Events.FirstOrDefaultAsync(e =>
+                        e.Eventname == gameData.EventName &&
+                        (targetGame == null || e.Gameid == targetGame.Gameid));
+
+                    if (targetEvent == null)
+                    {
+                        targetEvent = new Event
                         {
-                            targetServer = new Server { Servername = sn, Game = targetGame };
-                            _context.Servers.Add(targetServer);
-                            await _context.SaveChangesAsync();
-                        }
-                        serverCache[sn] = targetServer;
-
-                        _context.Aiextractedfields.Add(new Aiextractedfield { Analysisid = analysis.Analysisid, Rawtext = sn, Fieldtype = "ServerName", Confidence = 0.95 });
-                    }
-
-                    // 3. Extract Event Name
-                    string? en = null;
-                    if (root.TryGetProperty("event_name", out var eElem)) en = eElem.GetString();
-
-                    Event? targetEvent = await _context.Events.FirstOrDefaultAsync(e => e.Eventname == en && (targetGame == null || e.Gameid == targetGame.Gameid));
-                    if (targetEvent == null && !string.IsNullOrEmpty(en))
-                    {
-                        targetEvent = new Event { Eventname = en, Game = targetGame, Startdate = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified) };
+                            Eventname = gameData.EventName,
+                            Game = targetGame,
+                            Startdate = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified)
+                        };
                         _context.Events.Add(targetEvent);
                         await _context.SaveChangesAsync();
-                        _context.Aiextractedfields.Add(new Aiextractedfield { Analysisid = analysis.Analysisid, Rawtext = en, Fieldtype = "EventName", Confidence = 0.95 });
                     }
-
-                    // 4. Create Leaderboard
-                    var lb = new Leaderboard
+                    _context.Aiextractedfields.Add(new Aiextractedfield
                     {
-                        Title = $"Bảng xếp hạng {en ?? targetEvent?.Eventname ?? "mới"}",
-                        Createdfromanalysisid = analysis.Analysisid,
-                        Metrictype = "Score",
-                        Event = targetEvent
-                    };
-                    _context.Leaderboards.Add(lb);
-                    await _context.SaveChangesAsync();
+                        Analysisid = analysis.Analysisid,
+                        Rawtext = gameData.EventName,
+                        Fieldtype = "EventName",
+                        Confidence = 0.90
+                    });
+                }
 
-                    // 5. Process Leaderboard Entries
-                    if (root.TryGetProperty("leaderboard", out var lbArray) && lbArray.ValueKind == JsonValueKind.Array)
+                // 4. Create Leaderboard
+                var lb = new Leaderboard
+                {
+                    Title = $"Bảng xếp hạng {gameData.EventName ?? targetEvent?.Eventname ?? "mới"}",
+                    Createdfromanalysisid = analysis.Analysisid,
+                    Metrictype = "Score",
+                    Event = targetEvent
+                };
+                _context.Leaderboards.Add(lb);
+                await _context.SaveChangesAsync();
+
+                // 5. Process Leaderboard Entries
+                foreach (var entry in gameData.Leaderboard)
+                {
+                    if (string.IsNullOrEmpty(entry.PlayerName)) continue;
+
+                    // Find or create Guild
+                    Guild? playerGuild = null;
+                    if (!string.IsNullOrEmpty(entry.GuildName))
                     {
-                        foreach (var item in lbArray.EnumerateArray())
+                        if (!guildCache.TryGetValue(entry.GuildName, out playerGuild))
                         {
-                            // 1. Extract Rank
-                            int rank = 0;
-                            if (item.TryGetProperty("rank", out var rE) || item.TryGetProperty("Rank", out rE))
-                            {
-                                if (rE.ValueKind == JsonValueKind.Number) rE.TryGetInt32(out rank);
-                                else if (int.TryParse(rE.GetString() ?? "0", out var rS)) rank = rS;
-                            }
-                            
-                            // 2. Extract Player Name
-                            string? pName = null;
-                            if (item.TryGetProperty("player_name", out var pE) || 
-                                item.TryGetProperty("PlayerName", out pE) || 
-                                item.TryGetProperty("name", out pE) || 
-                                item.TryGetProperty("Name", out pE))
-                            {
-                                pName = pE.GetString();
-                            }
-                            
-                            // 3. Extract Score
-                            double score = 0;
-                            if (item.TryGetProperty("score", out var scE) || 
-                                item.TryGetProperty("Score", out scE) || 
-                                item.TryGetProperty("value", out scE) || 
-                                item.TryGetProperty("Value", out scE))
-                            {
-                                if (scE.ValueKind == JsonValueKind.Number) scE.TryGetDouble(out score);
-                                else if (double.TryParse(scE.GetString()?.Replace(",", "").Replace(".", "") ?? "0", out var scS)) score = scS;
-                            }
-                            
-                            // 4. Extract Guild Name
-                            string? guildNameStr = null;
-                            if (item.TryGetProperty("guild_name", out var gNE) || 
-                                item.TryGetProperty("GuildName", out gNE) || 
-                                item.TryGetProperty("guild", out gNE) || 
-                                item.TryGetProperty("Guild", out gNE))
-                            {
-                                guildNameStr = gNE.GetString();
-                            }
+                            playerGuild = await _context.Guilds.FirstOrDefaultAsync(g =>
+                                g.Guildname == entry.GuildName &&
+                                (targetServer == null || g.Serverid == targetServer.Serverid));
 
-                            if (string.IsNullOrEmpty(pName)) continue;
-
-                            // Find or Create Guild
-                            Guild? playerGuild = null;
-                            if (!string.IsNullOrEmpty(guildNameStr))
+                            if (playerGuild == null)
                             {
-                                if (!guildCache.TryGetValue(guildNameStr, out playerGuild))
-                                {
-                                    playerGuild = await _context.Guilds.FirstOrDefaultAsync(g => g.Guildname == guildNameStr && (targetServer == null || g.Serverid == targetServer.Serverid));
-                                    if (playerGuild == null)
-                                    {
-                                        playerGuild = new Guild { Guildname = guildNameStr, Server = targetServer };
-                                        _context.Guilds.Add(playerGuild);
-                                        await _context.SaveChangesAsync();
-                                    }
-                                    guildCache[guildNameStr] = playerGuild;
-                                }
+                                playerGuild = new Guild { Guildname = entry.GuildName, Server = targetServer };
+                                _context.Guilds.Add(playerGuild);
+                                await _context.SaveChangesAsync();
                             }
-
-                            // Find or Create Player
-                            if (!playerCache.TryGetValue(pName, out var player))
-                            {
-                                player = await _context.Players.FirstOrDefaultAsync(p => p.Playername == pName && (targetGame == null || p.Gameid == targetGame.Gameid));
-                                if (player == null)
-                                {
-                                    player = new Player { Playername = pName, Game = targetGame, Server = targetServer, Guild = playerGuild };
-                                    _context.Players.Add(player);
-                                    await _context.SaveChangesAsync();
-                                }
-                                else 
-                                {
-                                    if (player.Guildid == null && playerGuild != null) player.Guildid = playerGuild.Guildid;
-                                    if (player.Serverid == null && targetServer != null) player.Serverid = targetServer.Serverid;
-                                }
-                                playerCache[pName] = player;
-                            }
-
-                            // Add Entry
-                            _context.Leaderboardentries.Add(new Leaderboardentry
-                            {
-                                Leaderboardid = lb.Leaderboardid,
-                                Playerid = player.Playerid,
-                                Rank = rank,
-                                Value = score
-                            });
+                            guildCache[entry.GuildName] = playerGuild;
                         }
                     }
 
-                    await _context.SaveChangesAsync();
-                    upload.Status = "Success";
-                    await _context.SaveChangesAsync();
+                    // Find or create Player
+                    if (!playerCache.TryGetValue(entry.PlayerName, out var player))
+                    {
+                        player = await _context.Players.FirstOrDefaultAsync(p =>
+                            p.Playername == entry.PlayerName &&
+                            (targetGame == null || p.Gameid == targetGame.Gameid));
+
+                        if (player == null)
+                        {
+                            player = new Player
+                            {
+                                Playername = entry.PlayerName,
+                                Game = targetGame,
+                                Server = targetServer,
+                                Guild = playerGuild
+                            };
+                            _context.Players.Add(player);
+                            await _context.SaveChangesAsync();
+                        }
+                        else
+                        {
+                            if (player.Guildid == null && playerGuild != null) player.Guildid = playerGuild.Guildid;
+                            if (player.Serverid == null && targetServer != null) player.Serverid = targetServer.Serverid;
+                        }
+                        playerCache[entry.PlayerName] = player;
+                    }
+
+                    _context.Leaderboardentries.Add(new Leaderboardentry
+                    {
+                        Leaderboardid = lb.Leaderboardid,
+                        Playerid = player.Playerid,
+                        Rank = entry.Rank,
+                        Value = entry.Score
+                    });
                 }
-                catch (Exception jsonEx)
-                {
-                    Console.WriteLine($"JSON Parse Error: {jsonEx.Message}. Content: {jsonContent}");
-                    throw new Exception($"Failed to parse AI result: {jsonEx.Message}");
-                }
+
+                await _context.SaveChangesAsync();
+                upload.Status = "Success";
+                await _context.SaveChangesAsync();
             }
             catch (Exception ex)
             {
@@ -324,75 +299,237 @@ namespace DAL.Repository
                     upload.Status = "Failed";
                     await _context.SaveChangesAsync();
                 }
-                Console.WriteLine($"Error processing AI result: {ex.Message}");
+                Console.WriteLine($"Error processing OCR result: {ex.Message}");
                 throw;
             }
 
-            return analysis;
+            return analysis!;
         }
 
-        private async Task<MistralOcrResultDto> CallGroqOcrWithUrl(string imageUrl)
+        // ── OCR API call ──────────────────────────────────────────────────────────
+
+        private async Task<HfOcrResultDto> CallHfOcrWithUrl(string imageUrl)
         {
-            var apiKey = _config["Groq:ApiKey"]?.Trim() ?? throw new Exception("Missing Groq API Key");
+            // Download image from Cloudinary
+            using var imageResponse = await _http.GetAsync(imageUrl);
+            imageResponse.EnsureSuccessStatusCode();
+            var imageBytes = await imageResponse.Content.ReadAsByteArrayAsync();
+            var contentType = imageResponse.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
+            var fileName = Path.GetFileName(new Uri(imageUrl).LocalPath);
+            if (string.IsNullOrWhiteSpace(fileName)) fileName = "image.jpg";
 
-            var promptText = "Bạn là một AI chuyên gia về OCR và phân tích dữ liệu game. " +
-                "NHIỆM VỤ: Đọc ảnh chụp màn hình bảng xếp hạng trong game (thường là VLTK Mobile hoặc VLTK 2.0). " +
-                "YÊU CẦU CHI TIẾT: " +
-                "1. 'game_name': Xác định chính xác là 'VLTK Mobile' hoặc 'VLTK 2.0'. " +
-                "2. 'server_name': Tìm tên máy chủ (ví dụ: S100, Thái Sơn...). " +
-                "3. 'event_name': Tìm tiêu đề của bảng xếp hạng hiện tại (ví dụ: Bảng xếp hạng Lực Chiến, Công Thành Chiến...). " +
-                "4. 'leaderboard': Đây là phần quan trọng nhất. Hãy quét TOÀN BỘ các hàng trong bảng, bao gồm: " +
-                "   - 'rank': Thứ hạng (1, 2, 3...). " +
-                "   - 'player_name': Tên người chơi chính xác (hãy cẩn thận với các ký tự đặc biệt). " +
-                "   - 'score': Giá trị lực chiến, điểm số, hoặc cấp độ (là một số). " +
-                "   - 'guild_name': Tên bang hội (nếu có, nếu không thấy hãy để null). " +
-                "QUY TẮC: " +
-                "- Chỉ trả về duy nhất 1 đối tượng JSON, không có văn bản giải thích. " +
-                "- Phải trích xuất được ít nhất 10 hàng nếu ảnh có đủ dữ liệu. " +
-                "- Nếu không chắc chắn về một trường, hãy để null thay vì đoán sai. " +
-                "Ví dụ: { \"game_name\": \"...\", \"server_name\": \"...\", \"event_name\": \"...\", \"leaderboard\": [ { \"rank\": 1, \"player_name\": \"...\", \"score\": 123456, \"guild_name\": \"...\" } ] }";
+            return await PostToOcrApi(imageBytes, contentType, fileName);
+        }
 
-            var requestBody = new
-            {
-                model = "meta-llama/llama-4-scout-17b-16e-instruct", // Sử dụng model Llama 4 mới nhất hỗ trợ Vision của Groq
-                messages = new object[]
-                {
-                    new
-                    {
-                        role = "user",
-                        content = new object[]
-                        {
-                            new { type = "text", text = promptText },
-                            new
-                            {
-                                type = "image_url",
-                                image_url = new { url = imageUrl }
-                            }
-                        }
-                    }
-                },
-                temperature = 0.0,
-                response_format = new { type = "json_object" }
-            };
+        private async Task<HfOcrResultDto> PostToOcrApi(byte[] imageBytes, string contentType, string fileName)
+        {
+            using var form = new MultipartFormDataContent();
+            var imageContent = new ByteArrayContent(imageBytes);
+            imageContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+            form.Add(imageContent, "file", fileName);
 
-            _http.DefaultRequestHeaders.Clear();
-            _http.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", apiKey);
-
-            var response = await _http.PostAsJsonAsync(
-                "https://api.groq.com/openai/v1/chat/completions",
-                requestBody
-            );
-
+            var response = await _http.PostAsync(OcrEndpoint, form);
             var raw = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
-                throw new Exception(raw);
-            return JsonSerializer.Deserialize<MistralOcrResultDto>(
-                raw,
-                _jsonOptions
-            ) ?? throw new Exception("Failed to parse OCR result");
+                throw new Exception($"OCR API error ({response.StatusCode}): {raw}");
+
+            return JsonSerializer.Deserialize<HfOcrResultDto>(raw, _jsonOptions)
+                ?? throw new Exception("Failed to parse OCR result");
         }
+
+        // ── OCR text parser ───────────────────────────────────────────────────────
+
+        private static GameOcrData ParseOcrToGameData(HfOcrResultDto ocr, string gameName)
+        {
+            var result = new GameOcrData { GameName = gameName };
+
+            var validBlocks = ocr.TextBlocks
+                .Where(b => !string.IsNullOrWhiteSpace(b.Text) && b.BoundingBox != null && b.Confidence > 30)
+                .ToList();
+
+            if (validBlocks.Count > 0)
+            {
+                var rows = GroupBlocksIntoRows(validBlocks, yTolerance: 20);
+                ParseRows(rows, result);
+            }
+            else if (!string.IsNullOrWhiteSpace(ocr.FullText))
+            {
+                // Fallback: line-based parsing when no bounding boxes
+                ParseLines(ocr.FullText, result);
+            }
+
+            return result;
+        }
+
+        private static void ParseRows(List<List<HfTextBlock>> rows, GameOcrData result)
+        {
+            var eventKeywords = new[] { "Bảng", "Xếp Hạng", "Chiến", "Giải", "Hạng", "Event", "Tournament" };
+
+            foreach (var row in rows)
+            {
+                var tokens = row
+                    .Select(b => b.Text!.Trim())
+                    .Where(t => !string.IsNullOrEmpty(t))
+                    .ToList();
+
+                if (tokens.Count == 0) continue;
+
+                var rowText = string.Join(" ", tokens);
+
+                // Leaderboard row: first token is rank number
+                if (int.TryParse(tokens[0], out int rank) && rank >= 1 && rank <= 999 && tokens.Count >= 2)
+                {
+                    var mutableTokens = tokens.ToList();
+                    mutableTokens.RemoveAt(0); // remove rank
+
+                    // Find score: last token that parses as a large number
+                    double score = 0;
+                    for (int i = mutableTokens.Count - 1; i >= 0; i--)
+                    {
+                        var cleaned = mutableTokens[i].Replace(",", "").Replace(".", "");
+                        if (double.TryParse(cleaned, out var s) && s > 0)
+                        {
+                            score = s;
+                            mutableTokens.RemoveAt(i);
+                            break;
+                        }
+                    }
+
+                    var playerName = mutableTokens.Count > 0 ? mutableTokens[0] : null;
+                    var guildName = mutableTokens.Count > 1
+                        ? string.Join(" ", mutableTokens.Skip(1)).Trim()
+                        : null;
+
+                    if (!string.IsNullOrEmpty(playerName))
+                    {
+                        result.Leaderboard.Add(new LeaderboardEntryRaw
+                        {
+                            Rank = rank,
+                            PlayerName = playerName,
+                            Score = score,
+                            GuildName = string.IsNullOrWhiteSpace(guildName) ? null : guildName
+                        });
+                    }
+                    continue;
+                }
+
+                // Server name: contains S\d pattern or keywords
+                if (result.ServerName == null &&
+                    (Regex.IsMatch(rowText, @"\bS\d{1,3}\b") ||
+                     rowText.Contains("Server", StringComparison.OrdinalIgnoreCase) ||
+                     rowText.Contains("Máy chủ", StringComparison.OrdinalIgnoreCase)))
+                {
+                    result.ServerName = rowText;
+                    continue;
+                }
+
+                // Event name: contains known Vietnamese leaderboard keywords
+                if (result.EventName == null &&
+                    eventKeywords.Any(k => rowText.Contains(k, StringComparison.OrdinalIgnoreCase)))
+                {
+                    result.EventName = rowText;
+                }
+            }
+        }
+
+        private static void ParseLines(string fullText, GameOcrData result)
+        {
+            var eventKeywords = new[] { "Bảng", "Xếp Hạng", "Chiến", "Giải", "Hạng", "Event" };
+            var lines = fullText
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(l => l.Trim())
+                .Where(l => l.Length > 0)
+                .ToList();
+
+            // Rank pattern: "1 PlayerName GuildName 123456" or "1. PlayerName 123456"
+            var rankLinePattern = new Regex(@"^(\d{1,3})[.\s]+(.+?)\s+([\d,\.]{4,})$");
+
+            foreach (var line in lines)
+            {
+                // Try leaderboard row
+                var m = rankLinePattern.Match(line);
+                if (m.Success && int.TryParse(m.Groups[1].Value, out int rank) && rank >= 1 && rank <= 999)
+                {
+                    var scoreStr = m.Groups[3].Value.Replace(",", "").Replace(".", "");
+                    double.TryParse(scoreStr, out double score);
+
+                    var middle = m.Groups[2].Value.Trim();
+                    // Split middle into player name + guild (best guess: first word = player, rest = guild)
+                    var parts = middle.Split(' ', 2);
+                    result.Leaderboard.Add(new LeaderboardEntryRaw
+                    {
+                        Rank = rank,
+                        PlayerName = parts[0],
+                        Score = score,
+                        GuildName = parts.Length > 1 ? parts[1].Trim() : null
+                    });
+                    continue;
+                }
+
+                if (result.ServerName == null &&
+                    (Regex.IsMatch(line, @"\bS\d{1,3}\b") ||
+                     line.Contains("Server", StringComparison.OrdinalIgnoreCase)))
+                {
+                    result.ServerName = line;
+                    continue;
+                }
+
+                if (result.EventName == null &&
+                    eventKeywords.Any(k => line.Contains(k, StringComparison.OrdinalIgnoreCase)))
+                {
+                    result.EventName = line;
+                }
+            }
+        }
+
+        private static List<List<HfTextBlock>> GroupBlocksIntoRows(List<HfTextBlock> blocks, int yTolerance)
+        {
+            var sorted = blocks.OrderBy(b => b.BoundingBox!.Y).ToList();
+            var rows = new List<List<HfTextBlock>>();
+            List<HfTextBlock>? currentRow = null;
+            int currentRowY = int.MinValue;
+
+            foreach (var block in sorted)
+            {
+                var blockY = block.BoundingBox!.Y;
+                if (currentRow == null || Math.Abs(blockY - currentRowY) > yTolerance)
+                {
+                    currentRow = [block];
+                    rows.Add(currentRow);
+                    currentRowY = blockY;
+                }
+                else
+                {
+                    currentRow.Add(block);
+                }
+            }
+
+            foreach (var row in rows)
+                row.Sort((a, b) => a.BoundingBox!.X.CompareTo(b.BoundingBox!.X));
+
+            return rows;
+        }
+
+        // ── Helper types ──────────────────────────────────────────────────────────
+
+        private class GameOcrData
+        {
+            public string? GameName { get; set; }
+            public string? ServerName { get; set; }
+            public string? EventName { get; set; }
+            public List<LeaderboardEntryRaw> Leaderboard { get; set; } = [];
+        }
+
+        private class LeaderboardEntryRaw
+        {
+            public int Rank { get; set; }
+            public string PlayerName { get; set; } = "";
+            public double Score { get; set; }
+            public string? GuildName { get; set; }
+        }
+
+        // ── Query methods (unchanged) ─────────────────────────────────────────────
 
         public async Task<(List<Aianalysis> Items, int TotalCount)> GetAllAsync(AIQueryParameters parameters, int? userId = null)
         {
@@ -413,64 +550,39 @@ namespace DAL.Repository
                 .AsQueryable();
 
             if (userId.HasValue)
-            {
                 query = query.Where(a => a.Upload != null && a.Upload.Userid == userId.Value);
-            }
 
-            // Search (Search by AI model or extracted fields)
             if (!string.IsNullOrEmpty(parameters.SearchTerm))
             {
                 var search = parameters.SearchTerm.ToLower();
-                query = query.Where(a => 
+                query = query.Where(a =>
                     (a.Aimodelversion != null && a.Aimodelversion.ToLower().Contains(search)) ||
                     a.Aiextractedfields.Any(f => f.Rawtext != null && f.Rawtext.ToLower().Contains(search)));
             }
 
-            // Filter by Date Range
             if (parameters.StartDate.HasValue)
-            {
                 query = query.Where(a => a.Processedtime >= parameters.StartDate.Value);
-            }
-            if (parameters.EndDate.HasValue)
-            {
-                query = query.Where(a => a.Processedtime <= parameters.EndDate.Value);
-            }
 
-            // Filter by GameName
+            if (parameters.EndDate.HasValue)
+                query = query.Where(a => a.Processedtime <= parameters.EndDate.Value);
+
             if (!string.IsNullOrEmpty(parameters.GameName))
             {
                 var gn = parameters.GameName.ToLower();
-                query = query.Where(a => a.Aiextractedfields.Any(f => 
+                query = query.Where(a => a.Aiextractedfields.Any(f =>
                     f.Fieldtype == "GameName" && f.Rawtext != null && f.Rawtext.ToLower().Contains(gn)));
             }
 
             var totalCount = await query.CountAsync();
 
-            // Sorting
-            if (!string.IsNullOrEmpty(parameters.SortBy))
-            {
-                switch (parameters.SortBy.ToLower())
-                {
-                    case "processedtime":
-                        query = parameters.IsDescending ? query.OrderByDescending(a => a.Processedtime) : query.OrderBy(a => a.Processedtime);
-                        break;
-                    case "gamename":
-                        // Sorting by GameName extracted field (complex)
-                        query = parameters.IsDescending 
-                            ? query.OrderByDescending(a => a.Aiextractedfields.Where(f => f.Fieldtype == "GameName").Select(f => f.Rawtext).FirstOrDefault())
-                            : query.OrderBy(a => a.Aiextractedfields.Where(f => f.Fieldtype == "GameName").Select(f => f.Rawtext).FirstOrDefault());
-                        break;
-                    default:
-                        query = parameters.IsDescending ? query.OrderByDescending(a => a.Processedtime) : query.OrderBy(a => a.Processedtime);
-                        break;
-                }
-            }
-            else
-            {
-                query = parameters.IsDescending ? query.OrderByDescending(a => a.Processedtime) : query.OrderBy(a => a.Processedtime);
-            }
+            query = !string.IsNullOrEmpty(parameters.SortBy) && parameters.SortBy.ToLower() == "gamename"
+                ? parameters.IsDescending
+                    ? query.OrderByDescending(a => a.Aiextractedfields.Where(f => f.Fieldtype == "GameName").Select(f => f.Rawtext).FirstOrDefault())
+                    : query.OrderBy(a => a.Aiextractedfields.Where(f => f.Fieldtype == "GameName").Select(f => f.Rawtext).FirstOrDefault())
+                : parameters.IsDescending
+                    ? query.OrderByDescending(a => a.Processedtime)
+                    : query.OrderBy(a => a.Processedtime);
 
-            // Paging - Ensure Skip is never negative
             var items = await query
                 .Skip(Math.Max(0, (parameters.PageNumber - 1) * parameters.PageSize))
                 .Take(parameters.PageSize)
@@ -514,30 +626,16 @@ namespace DAL.Repository
 
             if (analysis == null) return false;
 
-            // Delete Leaderboards and their entries
-            if (analysis.Leaderboards.Count > 0)
-            {
-                foreach (var lb in analysis.Leaderboards)
-                {
-                    _context.Leaderboardentries.RemoveRange(lb.Leaderboardentries);
-                }
-                _context.Leaderboards.RemoveRange(analysis.Leaderboards);
-            }
+            foreach (var lb in analysis.Leaderboards)
+                _context.Leaderboardentries.RemoveRange(lb.Leaderboardentries);
 
-            // Delete Extracted Fields
-            if (analysis.Aiextractedfields.Count > 0)
-            {
-                _context.Aiextractedfields.RemoveRange(analysis.Aiextractedfields);
-            }
+            _context.Leaderboards.RemoveRange(analysis.Leaderboards);
+            _context.Aiextractedfields.RemoveRange(analysis.Aiextractedfields);
 
-            // Delete Upload if exists
             if (analysis.Upload != null)
-            {
                 _context.Imageuploads.Remove(analysis.Upload);
-            }
 
             _context.Aianalyses.Remove(analysis);
-            
             await _context.SaveChangesAsync();
             return true;
         }
@@ -552,7 +650,10 @@ namespace DAL.Repository
 
             if (result == null || result.Resources == null) return [];
 
-            return result.Resources.Select(r => r.SecureUrl?.ToString() ?? "").Where(url => !string.IsNullOrEmpty(url)).ToList();
+            return result.Resources
+                .Select(r => r.SecureUrl?.ToString() ?? "")
+                .Where(url => !string.IsNullOrEmpty(url))
+                .ToList();
         }
 
         public async Task<List<HeatmapDto>> GetHeatmapDataAsync(int? userId = null)
@@ -566,17 +667,19 @@ namespace DAL.Repository
 
             if (userId.HasValue && userId.Value > 0)
             {
-                query = query.Where(e => e.Leaderboard != null && 
-                                         e.Leaderboard.Createdfromanalysis != null && 
-                                         e.Leaderboard.Createdfromanalysis.Upload != null && 
-                                         e.Leaderboard.Createdfromanalysis.Upload.Userid == userId.Value);
+                query = query.Where(e =>
+                    e.Leaderboard != null &&
+                    e.Leaderboard.Createdfromanalysis != null &&
+                    e.Leaderboard.Createdfromanalysis.Upload != null &&
+                    e.Leaderboard.Createdfromanalysis.Upload.Userid == userId.Value);
             }
 
             var entries = await query
-                .Where(e => e.Playerid.HasValue && e.Player != null && e.Value.HasValue && 
-                            e.Leaderboard != null && 
-                            e.Leaderboard.Createdfromanalysis != null && 
-                            e.Leaderboard.Createdfromanalysis.Processedtime.HasValue)
+                .Where(e =>
+                    e.Playerid.HasValue && e.Player != null && e.Value.HasValue &&
+                    e.Leaderboard != null &&
+                    e.Leaderboard.Createdfromanalysis != null &&
+                    e.Leaderboard.Createdfromanalysis.Processedtime.HasValue)
                 .Select(e => new
                 {
                     PlayerId = e.Playerid!.Value,
@@ -594,7 +697,6 @@ namespace DAL.Repository
             for (int i = 0; i < entries.Count; i++)
             {
                 var current = entries[i];
-                
                 if (i > 0 && entries[i - 1].PlayerId == current.PlayerId)
                 {
                     var previous = entries[i - 1];
@@ -603,15 +705,12 @@ namespace DAL.Repository
                         var date = current.Time.Date;
                         if (!heatmapDays.ContainsKey(date))
                             heatmapDays[date] = new List<HeatmapPlayerDto>();
-                        
-                        // Fake data (Jitter): Thêm vài giây ngẫu nhiên để dữ liệu không bị trùng khít giờ phút
-                        var displayTime = current.Time.AddSeconds(random.Next(0, 59));
 
-                        heatmapDays[date].Add(new HeatmapPlayerDto 
-                        { 
-                            PlayerId = current.PlayerId, 
-                            PlayerName = current.PlayerName ?? "Unknown", 
-                            Time = displayTime.ToString("HH:mm:ss") 
+                        heatmapDays[date].Add(new HeatmapPlayerDto
+                        {
+                            PlayerId = current.PlayerId,
+                            PlayerName = current.PlayerName ?? "Unknown",
+                            Time = current.Time.AddSeconds(random.Next(0, 59)).ToString("HH:mm:ss")
                         });
                     }
                 }
@@ -626,71 +725,6 @@ namespace DAL.Repository
                     Players = kvp.Value.OrderBy(p => p.Time).ToList()
                 })
                 .ToList();
-        }
-
-        private async Task<MistralOcrResultDto> CallGroqOcr(IFormFile file)
-        {
-            var apiKey = _config["Groq:ApiKey"]?.Trim() ?? throw new Exception("Missing Groq API Key");
-
-            using var ms = new MemoryStream();
-            await file.CopyToAsync(ms);
-
-            if (ms.Length > 2 * 1024 * 1024)
-                throw new Exception("Image too large. Max 2MB.");
-
-            var base64Image = Convert.ToBase64String(ms.ToArray());
-
-            var promptText = "Bạn là chuyên gia phân tích ảnh chụp màn hình bảng xếp hạng game VLTK Mobile và VLTK 2.0. " +
-                "NHIỆM VỤ: Trích xuất thông tin chính xác từ ảnh theo định dạng JSON chuẩn. " +
-                "YÊU CẦU DỮ LIỆU: " +
-                "1. 'game_name': Phải là 'VLTK Mobile' hoặc 'VLTK 2.0'. " +
-                "2. 'server_name': Tên máy chủ (ví dụ: Thái Sơn, S1...). " +
-                "3. 'event_name': Tên sự kiện bảng xếp hạng (ví dụ: Công Thành Chiến, Võ Lâm Minh Chủ...). " +
-                "4. 'leaderboard': Danh sách người chơi gồm: 'rank' (số nguyên), 'player_name' (tên chính xác), 'score' (điểm số hoặc lực chiến), 'guild_name' (tên bang hội nếu có). " +
-                "QUAN TRỌNG: Chỉ trả về mã JSON duy nhất, không giải thích thêm. Nếu không thấy trường nào hãy để null. " +
-                "Ví dụ định dạng trả về: { \"game_name\": \"...\", \"server_name\": \"...\", \"event_name\": \"...\", \"leaderboard\": [ { \"rank\": 1, \"player_name\": \"...\", \"score\": 100, \"guild_name\": \"...\" } ] }";
-
-            var requestBody = new
-            {
-                model = "meta-llama/llama-4-scout-17b-16e-instruct", 
-                messages = new object[]
-                {
-                    new
-                    {
-                        role = "user",
-                        content = new object[]
-                        {
-                            new { type = "text", text = promptText },
-                            new
-                            {
-                                type = "image_url",
-                                image_url = new { url = $"data:image/jpeg;base64,{base64Image}" }
-                            }
-                        }
-                    }
-                },
-                temperature = 0.0,
-                response_format = new { type = "json_object" }
-            };
-
-            _http.DefaultRequestHeaders.Clear();
-            _http.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", apiKey);
-
-            var response = await _http.PostAsJsonAsync(
-                "https://api.groq.com/openai/v1/chat/completions",
-                requestBody
-            );
-
-            var raw = await response.Content.ReadAsStringAsync();
-
-            if (!response.IsSuccessStatusCode)
-                throw new Exception(raw);
-            return JsonSerializer.Deserialize<MistralOcrResultDto>(
-                raw,
-                _jsonOptions
-            ) ?? throw new Exception("Failed to parse OCR result");
-
         }
     }
 }
